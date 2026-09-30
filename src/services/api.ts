@@ -1,4 +1,4 @@
-import { Track, LyricLine, LyricsData, AlbumDetail, ArtistDetail, DailyMixItem } from '../types';
+import { Track, LyricLine, LyricWord, LyricsData, AlbumDetail, ArtistDetail, DailyMixItem } from '../types';
 
 // Parse LRC formatted string into structured LyricLine array with word-by-word timestamps
 export function parseLrc(lrcText: string): LyricLine[] {
@@ -8,16 +8,32 @@ export function parseLrc(lrcText: string): LyricLine[] {
   let idCounter = 0;
 
   for (const rawLine of rawLines) {
-    const match = rawLine.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/);
-    if (!match) continue;
+    const lineMatch = rawLine.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/);
+    if (!lineMatch) continue;
 
-    const minutes = parseInt(match[1], 10);
-    const seconds = parseInt(match[2], 10);
-    const millis = match[3] ? parseInt(match[3].padEnd(3, '0').slice(0, 3), 10) : 0;
+    const minutes = parseInt(lineMatch[1], 10);
+    const seconds = parseInt(lineMatch[2], 10);
+    const millis = lineMatch[3] ? parseInt(lineMatch[3].padEnd(3, '0').slice(0, 3), 10) : 0;
     const lineTime = minutes * 60 + seconds + millis / 1000;
-    const content = match[4].trim();
+    const content = lineMatch[4].trim();
 
     if (!content) continue;
+
+    // Check for explicit Enhanced LRC word tags (e.g. <00:12.34>word or <12.34>word)
+    const wordTagRegex = /<(\d{1,2}:)?(\d{2})(?:\.(\d{2,3}))?>(.*?)(?=<(\d{1,2}:)?\d{2}(?:\.\d{2,3})?>|$)/g;
+    const explicitWords: LyricWord[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = wordTagRegex.exec(content)) !== null) {
+      const min = match[1] ? parseInt(match[1].replace(':', ''), 10) : 0;
+      const sec = parseInt(match[2], 10);
+      const ms = match[3] ? parseInt(match[3].padEnd(3, '0').slice(0, 3), 10) : 0;
+      const wTime = min * 60 + sec + ms / 1000;
+      const wText = match[4].replace(/\[.*?\]/g, '').trim();
+      if (wText) {
+        explicitWords.push({ word: wText, time: wTime });
+      }
+    }
 
     // Strip nested tags to extract clean text
     const cleanText = content
@@ -30,6 +46,7 @@ export function parseLrc(lrcText: string): LyricLine[] {
         id: idCounter++,
         time: lineTime,
         text: cleanText,
+        words: explicitWords.length > 0 ? explicitWords : undefined,
       });
     }
   }
@@ -43,19 +60,30 @@ export function parseLrc(lrcText: string): LyricLine[] {
     const nextLine = parsedLines[i + 1];
     const gapToNext = nextLine ? (nextLine.time - line.time) : 4.0;
 
+    // If explicit word tags were extracted from Enhanced LRC, keep and normalize them
+    if (line.words && line.words.length > 0) {
+      line.words.sort((a, b) => a.time - b.time);
+      if (line.words[0].time > line.time) {
+        line.words[0].time = line.time;
+      }
+      line.endTime = line.words[line.words.length - 1].time + 0.5;
+      continue;
+    }
+
+    // Standard LRC: synthesize natural word-by-word timing
     const filteredWords = line.text.split(/\s+/).filter((w) => w.length > 0);
     const wordCount = filteredWords.length || 1;
 
-    // Calculate natural singing duration (words highlighted at real singing pace ~0.4s/word)
-    // Never stretch across long instrumental pauses between lines!
-    const naturalSingDuration = Math.max(0.6, Math.min(gapToNext * 0.9, wordCount * 0.42 + 0.3));
-    line.endTime = line.time + naturalSingDuration;
+    // Natural singing duration across gapToNext (never stretch across long instrumental breaks)
+    const lineDuration = Math.min(gapToNext * 0.9, Math.max(1.0, wordCount * 0.42 + 0.2));
+    line.endTime = line.time + lineDuration;
 
     const totalChars = filteredWords.reduce((sum, w) => sum + w.length, 0) || 1;
 
     let elapsedChars = 0;
-    line.words = filteredWords.map((w) => {
-      const wordStartTime = line.time + (elapsedChars / totalChars) * naturalSingDuration;
+    line.words = filteredWords.map((w, idx) => {
+      // Word 0 starts at line.time so it highlights immediately when the line turns active
+      const wordStartTime = idx === 0 ? line.time : line.time + (elapsedChars / totalChars) * lineDuration;
       elapsedChars += w.length;
       return {
         word: w,

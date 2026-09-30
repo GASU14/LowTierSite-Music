@@ -42,7 +42,6 @@
       color: #ffffff;
     }
 
-    /* Buttons layout container */
     .btn-group {
       display: flex;
       flex-direction: row;
@@ -51,7 +50,6 @@
       gap: 10px;
     }
 
-    /* Single minimalist button */
     .btn {
       position: relative;
       width: 200px;
@@ -67,7 +65,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: border-color 0.2s, transform 0.1s, width 0.2s ease;
+      transition: border-color 0.2s, transform 0.1s;
       outline: none;
     }
 
@@ -79,12 +77,6 @@
       transform: scale(0.99);
     }
 
-    /* Proportional widths when Open and Update are shown together */
-    .btn-group.has-update .btn {
-      width: 120px;
-    }
-
-    /* Dark grey transparent progress fill */
     .btn-progress-fill {
       position: absolute;
       top: 0;
@@ -113,12 +105,7 @@
     <div id="btn-group" class="btn-group">
       <button id="action-btn" class="btn" onclick="handleActionClick()">
         <div id="progress-fill" class="btn-progress-fill"></div>
-        <span id="btn-text" class="btn-text">Download Music</span>
-      </button>
-
-      <button id="update-btn" class="btn" onclick="handleUpdateClick()" style="display: none;">
-        <div id="update-progress-fill" class="btn-progress-fill"></div>
-        <span id="update-btn-text" class="btn-text">Update</span>
+        <span id="btn-text" class="btn-text">Open Music</span>
       </button>
     </div>
   </div>
@@ -126,144 +113,34 @@
   <script>
     // Public CDN & GitHub raw endpoints with verified CORS access-control-allow-origin: *
     const DOWNLOAD_URLS = [
-      'https://cdn.jsdelivr.net/gh/GASU14/LowTierSite-Music@main/public/standalone.html',
+      window.location.origin + '/standalone.html',
+      window.location.origin + '/public/standalone.html',
       'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/public/standalone.html',
-      'https://cdn.jsdelivr.net/gh/GASU14/LowTierSite-Music@main/standalone.html',
-      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/standalone.html'
+      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/standalone.html',
+      'https://cdn.jsdelivr.net/gh/GASU14/LowTierSite-Music@main/public/standalone.html'
     ];
 
-    const CACHE_KEY = 'lts_music_standalone_html';
-    const CACHE_VERSION_KEY = 'lts_music_standalone_version';
-
-    const btnGroup = document.getElementById('btn-group');
     const actionBtn = document.getElementById('action-btn');
     const progressFill = document.getElementById('progress-fill');
     const btnText = document.getElementById('btn-text');
 
-    const updateBtn = document.getElementById('update-btn');
-    const updateProgressFill = document.getElementById('update-progress-fill');
-    const updateBtnText = document.getElementById('update-btn-text');
+    let isPlaying = false;
 
-    let isDownloaded = false;
-    let isDownloading = false;
-    let isUpdating = false;
-    let latestRemoteVersion = null;
+    async function handleActionClick() {
+      if (isPlaying) return;
+      isPlaying = true;
 
-    // Check if Music is already cached on load
-    window.addEventListener('DOMContentLoaded', () => {
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached && cached.length > 50000) {
-          setReadyState();
-          // Check in background if repo changed
-          checkForUpdate();
-        }
-      } catch (e) {}
-    });
-
-    function setReadyState() {
-      isDownloaded = true;
-      isDownloading = false;
+      btnText.textContent = 'Loading 0%';
       progressFill.style.width = '0%';
-      btnText.textContent = 'Open';
-      actionBtn.style.borderColor = '#ffffff';
-    }
-
-    function showUpdateButton() {
-      btnGroup.classList.add('has-update');
-      updateBtn.style.display = 'flex';
-      updateBtn.style.borderColor = '#71717a';
-    }
-
-    function hideUpdateButton() {
-      btnGroup.classList.remove('has-update');
-      updateBtn.style.display = 'none';
-      updateProgressFill.style.width = '0%';
-      updateBtnText.textContent = 'Update';
-    }
-
-    // Check if GitHub repo has new commits/changes
-    async function checkForUpdate() {
-      if (!isDownloaded) return;
-
-      const cachedVer = localStorage.getItem(CACHE_VERSION_KEY);
-
-      // Strategy 1: Check latest commit for public/standalone.html
-      try {
-        const res = await fetch('https://api.github.com/repos/GASU14/LowTierSite-Music/commits?path=public/standalone.html&per_page=1', {
-          headers: { 'Accept': 'application/vnd.github.v3+json' },
-          cache: 'no-store'
-        });
-        if (res.ok) {
-          const commits = await res.json();
-          if (Array.isArray(commits) && commits.length > 0) {
-            const sha = commits[0].sha;
-            if (sha) {
-              latestRemoteVersion = sha;
-              if (cachedVer && sha !== cachedVer) {
-                showUpdateButton();
-              }
-              return;
-            }
-          }
-        }
-      } catch (e) {}
-
-      // Strategy 2: Check latest commit on main branch
-      try {
-        const res2 = await fetch('https://api.github.com/repos/GASU14/LowTierSite-Music/commits/main', {
-          headers: { 'Accept': 'application/vnd.github.v3+json' },
-          cache: 'no-store'
-        });
-        if (res2.ok) {
-          const data2 = await res2.json();
-          if (data2.sha) {
-            latestRemoteVersion = data2.sha;
-            if (cachedVer && data2.sha !== cachedVer) {
-              showUpdateButton();
-            }
-            return;
-          }
-        }
-      } catch (e) {}
-
-      // Strategy 3: Check ETag from raw GitHub / jsDelivr
-      try {
-        const headRes = await fetch('https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/public/standalone.html', {
-          method: 'HEAD',
-          cache: 'no-store'
-        });
-        if (headRes.ok) {
-          const etag = headRes.headers.get('etag');
-          if (etag) {
-            latestRemoteVersion = etag;
-            if (cachedVer && etag !== cachedVer) {
-              showUpdateButton();
-            }
-          }
-        }
-      } catch (e) {}
-    }
-
-    function handleActionClick() {
-      if (isDownloaded) {
-        openInAboutBlank();
-      } else {
-        startDownload();
-      }
-    }
-
-    async function startDownload() {
-      if (isDownloading) return;
-      isDownloading = true;
-
-      btnText.textContent = 'Downloading 0%';
-      progressFill.style.width = '0%';
+      actionBtn.style.borderColor = '#71717a';
 
       let response = null;
-      for (const url of DOWNLOAD_URLS) {
+      for (const baseUrl of DOWNLOAD_URLS) {
         try {
-          const res = await fetch(url, { cache: 'no-store' });
+          // Add click-time cache-buster parameter to bypass CDN/edge caching completely
+          const separator = baseUrl.includes('?') ? '&' : '?';
+          const urlWithBuster = baseUrl + separator + 't=' + Date.now();
+          const res = await fetch(urlWithBuster, { cache: 'no-store' });
           if (res.ok) {
             response = res;
             break;
@@ -272,9 +149,10 @@
       }
 
       if (!response) {
-        btnText.textContent = 'Retry Download';
+        btnText.textContent = 'Retry Open';
         progressFill.style.width = '0%';
-        isDownloading = false;
+        actionBtn.style.borderColor = '#333333';
+        isPlaying = false;
         return;
       }
 
@@ -295,138 +173,46 @@
 
           const pct = Math.min(Math.round((loaded / total) * 100), 99);
           progressFill.style.width = pct + '%';
-          btnText.textContent = 'Downloading ' + pct + '%';
+          btnText.textContent = 'Loading ' + pct + '%';
         }
 
         progressFill.style.width = '100%';
-        btnText.textContent = 'Downloading 100%';
+        btnText.textContent = 'Loading 100%';
 
         const blob = new Blob(chunks, { type: 'text/html;charset=utf-8' });
         const htmlText = await blob.text();
 
         if (!htmlText || htmlText.length < 50000) {
-          throw new Error('Incomplete download');
+          throw new Error('Incomplete content fetch');
         }
 
-        // Cache permanently in localStorage
-        try {
-          localStorage.removeItem(CACHE_KEY);
-          localStorage.setItem(CACHE_KEY, htmlText);
-          const ver = latestRemoteVersion || response.headers.get('etag') || Date.now().toString();
-          localStorage.setItem(CACHE_VERSION_KEY, ver);
-        } catch (storageErr) {
-          console.warn('Storage warning:', storageErr);
-        }
+        openInAboutBlank(htmlText);
 
         setTimeout(() => {
-          setReadyState();
-          hideUpdateButton();
-        }, 300);
+          btnText.textContent = 'Open Music';
+          progressFill.style.width = '0%';
+          actionBtn.style.borderColor = '#333333';
+          isPlaying = false;
+        }, 800);
 
       } catch (err) {
-        console.error('Download error:', err);
-        btnText.textContent = 'Retry Download';
+        console.error('Load error:', err);
+        btnText.textContent = 'Retry Open';
         progressFill.style.width = '0%';
-        isDownloading = false;
+        actionBtn.style.borderColor = '#333333';
+        isPlaying = false;
       }
     }
 
-    async function handleUpdateClick() {
-      if (isUpdating || isDownloading) return;
-      isUpdating = true;
-
-      updateBtnText.textContent = '0%';
-      updateProgressFill.style.width = '0%';
-
-      let response = null;
-      for (const url of DOWNLOAD_URLS) {
-        try {
-          const res = await fetch(url, { cache: 'no-store' });
-          if (res.ok) {
-            response = res;
-            break;
-          }
-        } catch (e) {}
-      }
-
-      if (!response) {
-        updateBtnText.textContent = 'Retry';
-        updateProgressFill.style.width = '0%';
-        isUpdating = false;
-        return;
-      }
-
-      try {
-        const contentLength = response.headers.get('content-length');
-        const total = contentLength ? parseInt(contentLength, 10) : 1176000;
-        let loaded = 0;
-
-        const reader = response.body.getReader();
-        const chunks = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          chunks.push(value);
-          loaded += value.length;
-
-          const pct = Math.min(Math.round((loaded / total) * 100), 99);
-          updateProgressFill.style.width = pct + '%';
-          updateBtnText.textContent = pct + '%';
-        }
-
-        updateProgressFill.style.width = '100%';
-        updateBtnText.textContent = '100%';
-
-        const blob = new Blob(chunks, { type: 'text/html;charset=utf-8' });
-        const htmlText = await blob.text();
-
-        if (!htmlText || htmlText.length < 50000) {
-          throw new Error('Incomplete download');
-        }
-
-        // Remove old cache for this site and set the new one
-        try {
-          localStorage.removeItem(CACHE_KEY);
-          localStorage.setItem(CACHE_KEY, htmlText);
-          const newVer = latestRemoteVersion || response.headers.get('etag') || Date.now().toString();
-          localStorage.setItem(CACHE_VERSION_KEY, newVer);
-        } catch (storageErr) {
-          console.warn('Storage warning:', storageErr);
-        }
-
-        setTimeout(() => {
-          isUpdating = false;
-          hideUpdateButton();
-        }, 400);
-
-      } catch (err) {
-        console.error('Update error:', err);
-        updateBtnText.textContent = 'Retry';
-        updateProgressFill.style.width = '0%';
-        isUpdating = false;
-      }
-    }
-
-    function openInAboutBlank() {
-      let cachedHtml = '';
-      try {
-        cachedHtml = localStorage.getItem(CACHE_KEY) || '';
-      } catch (e) {}
-
-      if (!cachedHtml) {
-        isDownloaded = false;
-        startDownload();
-        return;
-      }
+    function openInAboutBlank(htmlText) {
+      if (!htmlText) return;
 
       // Method 1: Standard window.open('about:blank') with document.write
       try {
         const win = window.open('about:blank', '_blank');
         if (win && !win.closed) {
           win.document.open();
-          win.document.write(cachedHtml);
+          win.document.write(htmlText);
           win.document.close();
           return;
         }
@@ -436,7 +222,7 @@
 
       // Method 2: Blob URL popup fallback
       try {
-        const blob = new Blob([cachedHtml], { type: 'text/html;charset=utf-8' });
+        const blob = new Blob([htmlText], { type: 'text/html;charset=utf-8' });
         const blobUrl = URL.createObjectURL(blob);
         const win2 = window.open(blobUrl, '_blank');
         if (!win2) {
@@ -453,7 +239,6 @@
         }
       } catch (err) {
         console.error('Failed to open tab:', err);
-        btnText.textContent = 'Allow popups & retry';
       }
     }
   </script>

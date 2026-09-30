@@ -392,7 +392,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     }
 
-    // High frequency timekeeper (polls YouTube hardware time + interpolates smoothly at 30ms)
+    // High frequency timekeeper (polls YouTube/HTML5 hardware time & interpolates at 25ms / 40Hz for fluid lyric sync)
     const timer = setInterval(() => {
       if (!isPlayingRef.current) return;
 
@@ -414,15 +414,42 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
 
             if (typeof cur === 'number' && !isNaN(cur) && cur >= 0) {
+              const now = Date.now();
+              const estTime = clockStartOffsetRef.current + (now - clockStartTimestampRef.current) / 1000;
+
+              // If YouTube hardware reported time jumped or drifted significantly (>0.7s), resync anchor
               if (cur !== lastYtReportedTimeRef.current) {
                 lastYtReportedTimeRef.current = cur;
-                setCurrentTime(cur);
+                if (Math.abs(cur - estTime) > 0.7 || clockStartTimestampRef.current === 0) {
+                  clockStartOffsetRef.current = cur;
+                  clockStartTimestampRef.current = now;
+                }
+              }
+
+              // Continuous fluid time update at 40fps with zero stutter
+              const smoothTime = clockStartOffsetRef.current + (now - clockStartTimestampRef.current) / 1000;
+              if (smoothTime >= 0) {
+                setCurrentTime(smoothTime);
               }
             }
           } catch {}
         }
+      } else if (sourceTypeRef.current === 'audio' && audioRef.current) {
+        const cur = audioRef.current.currentTime;
+        const now = Date.now();
+        const estTime = clockStartOffsetRef.current + (now - clockStartTimestampRef.current) / 1000;
+
+        if (Math.abs(cur - estTime) > 0.5 || clockStartTimestampRef.current === 0) {
+          clockStartOffsetRef.current = cur;
+          clockStartTimestampRef.current = now;
+        }
+
+        const smoothTime = clockStartOffsetRef.current + (now - clockStartTimestampRef.current) / 1000;
+        if (smoothTime >= 0) {
+          setCurrentTime(smoothTime);
+        }
       }
-    }, 100);
+    }, 25);
 
     return () => {
       clearInterval(timer);
