@@ -10,10 +10,10 @@ interface MixDiskProps {
 }
 
 const GRADIENTS: Record<string, { bg: string; accent: string; label: string }> = {
-  emerald: {
-    bg: 'from-emerald-500 via-teal-600 to-emerald-800',
-    accent: '#10b981',
-    label: '#064e3b',
+  indigo: {
+    bg: 'from-indigo-500 via-blue-600 to-indigo-900',
+    accent: '#6366f1',
+    label: '#1e1b4b',
   },
   violet: {
     bg: 'from-violet-500 via-purple-600 to-indigo-800',
@@ -45,12 +45,12 @@ const GRADIENTS: Record<string, { bg: string; accent: string; label: string }> =
 export const MixDisk: React.FC<MixDiskProps> = ({
   title = 'Daily Mix',
   mixNumber = '1',
-  gradient = 'emerald',
+  gradient = 'indigo',
   className = '',
   size = 'md',
   isSpinning = false,
 }) => {
-  const theme = GRADIENTS[gradient] || GRADIENTS.emerald;
+  const theme = GRADIENTS[gradient] || GRADIENTS.indigo;
   const numStr = String(mixNumber).replace(/[^\d]/g, '') || '1';
 
   const sizeClasses = {

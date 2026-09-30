@@ -41,7 +41,7 @@ interface AudioContextType {
   isTrackSaved: (trackId: number | string) => boolean;
   toggleFavorite: (track: Track) => void;
   isFavorite: (trackId: number | string) => boolean;
-  trackSources: Array<{ id: string; title: string; owner: string; score: number }>;
+  trackSources: Array<{ id: string; title: string; owner: string; score: number; durationSec?: number }>;
   currentSourceId: string | null;
   switchTrackSource: (videoId: string) => void;
   getTrackDuration: (track: Track) => number;
@@ -71,7 +71,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isVideoMode, setIsVideoModeState] = useState(false);
   const [isExpandedPlayer, setIsExpandedPlayer] = useState(false);
 
-  const [trackSourcesMap, setTrackSourcesMap] = useState<Record<string, Array<{ id: string; title: string; owner: string; score: number }>>>({});
+  const [trackSourcesMap, setTrackSourcesMap] = useState<Record<string, Array<{ id: string; title: string; owner: string; score: number; durationSec?: number }>>>({});
   const [currentSourceId, setCurrentSourceId] = useState<string | null>(null);
 
   // Cache real YouTube durations for tracks (in seconds)
@@ -392,13 +392,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     }
 
-    // High frequency timekeeper (polls YouTube hardware time + interpolates smoothly)
+    // High frequency timekeeper (polls YouTube hardware time + interpolates smoothly at 30ms)
     const timer = setInterval(() => {
       if (!isPlayingRef.current) return;
 
       if (sourceTypeRef.current === 'youtube') {
-        let syncedYtTime = false;
-
         if (ytPlayerRef.current && isYtReadyRef.current) {
           try {
             const cur = ytPlayerRef.current.getCurrentTime();
@@ -418,27 +416,13 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (typeof cur === 'number' && !isNaN(cur) && cur >= 0) {
               if (cur !== lastYtReportedTimeRef.current) {
                 lastYtReportedTimeRef.current = cur;
-                clockStartOffsetRef.current = cur;
-                clockStartTimestampRef.current = Date.now();
                 setCurrentTime(cur);
-                syncedYtTime = true;
               }
             }
           } catch {}
         }
-
-        // Continuous high-precision interpolation fallback if YouTube postMessage is throttled
-        if (!syncedYtTime && clockStartTimestampRef.current > 0) {
-          const elapsedSec = (Date.now() - clockStartTimestampRef.current) / 1000;
-          const interpolated = clockStartOffsetRef.current + elapsedSec;
-          const maxDur = durationRef.current || 300;
-
-          // Smoothly update time without cutting off YouTube video/audio early.
-          // YouTube fires onStateChange event.data === 0 when the video natively ends.
-          setCurrentTime(Math.min(interpolated, maxDur));
-        }
       }
-    }, 200);
+    }, 100);
 
     return () => {
       clearInterval(timer);
@@ -599,14 +583,38 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCurrentSourceId(videoId);
     setYoutubeUrl(`https://www.youtube.com/watch?v=${videoId}`);
 
+    // Reset clock state immediately
+    setCurrentTime(0);
+    clockStartOffsetRef.current = 0;
+    clockStartTimestampRef.current = Date.now();
+    lastYtReportedTimeRef.current = -1;
+
+    // Check if source duration is already known in trackSources
+    const sources = trackSourcesMap[String(currentTrack.id)] || [];
+    const matched = sources.find((s) => s.id === videoId);
+    if (matched && matched.durationSec && matched.durationSec > 0) {
+      updateRealDuration(currentTrack.id, matched.durationSec);
+    }
+
     if (ytPlayerRef.current && isYtReadyRef.current) {
       try {
         ytPlayerRef.current.loadVideoById(videoId);
-        clockStartTimestampRef.current = Date.now();
-        clockStartOffsetRef.current = 0;
         ytPlayerRef.current.playVideo();
         setIsPlaying(true);
         isPlayingRef.current = true;
+
+        [200, 500, 1000, 1800].forEach((delay) => {
+          setTimeout(() => {
+            try {
+              if (ytPlayerRef.current && currentTrackRef.current) {
+                const dur = ytPlayerRef.current.getDuration();
+                if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
+                  updateRealDuration(currentTrackRef.current.id, dur);
+                }
+              }
+            } catch {}
+          }, delay);
+        });
       } catch {}
     }
   };
@@ -620,14 +628,38 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     updateTrackSourceSelection(currentTrack.id, videoId);
 
+    // Reset clock state immediately
+    setCurrentTime(0);
+    clockStartOffsetRef.current = 0;
+    clockStartTimestampRef.current = Date.now();
+    lastYtReportedTimeRef.current = -1;
+
+    // Check if source duration is already known in trackSources
+    const sources = trackSourcesMap[String(currentTrack.id)] || [];
+    const matched = sources.find((s) => s.id === videoId);
+    if (matched && matched.durationSec && matched.durationSec > 0) {
+      updateRealDuration(currentTrack.id, matched.durationSec);
+    }
+
     if (ytPlayerRef.current && isYtReadyRef.current) {
       try {
         ytPlayerRef.current.loadVideoById(videoId);
-        clockStartTimestampRef.current = Date.now();
-        clockStartOffsetRef.current = 0;
         ytPlayerRef.current.playVideo();
         setIsPlaying(true);
         isPlayingRef.current = true;
+
+        [200, 500, 1000, 1800].forEach((delay) => {
+          setTimeout(() => {
+            try {
+              if (ytPlayerRef.current && currentTrackRef.current) {
+                const dur = ytPlayerRef.current.getDuration();
+                if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
+                  updateRealDuration(currentTrackRef.current.id, dur);
+                }
+              }
+            } catch {}
+          }, delay);
+        });
       } catch {}
     }
   };

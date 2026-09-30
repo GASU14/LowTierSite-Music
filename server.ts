@@ -73,6 +73,217 @@ async function startServer() {
     }
   });
 
+  // API 3b: Comprehensive Artist Details Endpoint (Deezer + iTunes hybrid with caching)
+  const artistDetailsCache = new Map<string, { data: any; timestamp: number }>();
+
+  app.get("/api/artist/details", async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (!q) return res.status(400).json({ error: "Query 'q' is required" });
+
+      const cacheKey = q.toLowerCase();
+      const cached = artistDetailsCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < 3600000) {
+        return res.json(cached.data);
+      }
+
+      // Step 1: Find Deezer Artist ID
+      let deezerId: number | null = /^\d+$/.test(q) ? Number(q) : null;
+      let artistName = q;
+
+      if (!deezerId) {
+        const searchResp = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(q)}&limit=5`, {
+          headers: { "User-Agent": "Mozilla/5.0" }
+        }).catch(() => null);
+
+        if (searchResp && searchResp.ok) {
+          const searchData = await searchResp.json();
+          if (Array.isArray(searchData.data) && searchData.data.length > 0) {
+            const match = searchData.data.find((a: any) => a.name.toLowerCase() === q.toLowerCase()) || searchData.data[0];
+            deezerId = match.id;
+            artistName = match.name;
+          }
+        }
+      }
+
+      let artistInfo: any = null;
+      let topTracks: any[] = [];
+      let albums: any[] = [];
+
+      if (deezerId) {
+        const [artistResp, topResp, albumsResp] = await Promise.all([
+          fetch(`https://api.deezer.com/artist/${deezerId}`, { headers: { "User-Agent": "Mozilla/5.0" } }).catch(() => null),
+          fetch(`https://api.deezer.com/artist/${deezerId}/top?limit=40`, { headers: { "User-Agent": "Mozilla/5.0" } }).catch(() => null),
+          fetch(`https://api.deezer.com/artist/${deezerId}/albums?limit=100`, { headers: { "User-Agent": "Mozilla/5.0" } }).catch(() => null),
+        ]);
+
+        if (artistResp && artistResp.ok) artistInfo = await artistResp.json();
+        if (topResp && topResp.ok) {
+          const tData = await topResp.json();
+          topTracks = Array.isArray(tData.data) ? tData.data : [];
+        }
+        if (albumsResp && albumsResp.ok) {
+          const aData = await albumsResp.json();
+          albums = Array.isArray(aData.data) ? aData.data : [];
+        }
+      }
+
+      // Also query iTunes on backend as supplemental data
+      let itunesAlbums: any[] = [];
+      let itunesSongs: any[] = [];
+      try {
+        const [itAlbResp, itSongResp] = await Promise.all([
+          fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artistName)}&entity=album&limit=40`, { headers: ITUNES_HEADERS }).catch(() => null),
+          fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(artistName)}&entity=song&limit=40`, { headers: ITUNES_HEADERS }).catch(() => null),
+        ]);
+        if (itAlbResp && itAlbResp.ok) {
+          const itAlbData = await itAlbResp.json();
+          if (Array.isArray(itAlbData.results)) itunesAlbums = itAlbData.results;
+        }
+        if (itSongResp && itSongResp.ok) {
+          const itSongData = await itSongResp.json();
+          if (Array.isArray(itSongData.results)) itunesSongs = itSongData.results;
+        }
+      } catch {}
+
+      // Format authentic portrait
+      const picture = artistInfo?.picture_xl || artistInfo?.picture_big || artistInfo?.picture_medium || artistInfo?.picture || "";
+      const fans = artistInfo?.nb_fan || 3500000;
+
+      // Format Top Tracks
+      const mappedTopTracks: any[] = [];
+      const seenTrackTitles = new Set<string>();
+
+      for (const t of topTracks) {
+        if (!t.title) continue;
+        const normT = t.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (seenTrackTitles.has(normT)) continue;
+        seenTrackTitles.add(normT);
+
+        const artwork = t.album?.cover_xl || t.album?.cover_big || t.album?.cover_medium || t.album?.cover || "";
+        mappedTopTracks.push({
+          id: `dz-${t.id}`,
+          title: t.title || t.title_short || 'Untitled',
+          artist: t.artist?.name || artistName,
+          album: t.album?.title || 'Single',
+          artworkSmall: t.album?.cover_medium || artwork,
+          artworkLarge: t.album?.cover_big || artwork,
+          artworkOriginal: artwork,
+          durationMs: (t.duration || 180) * 1000,
+          previewUrl: t.preview || '',
+          rank: t.rank || 0,
+          albumId: t.album?.id,
+          artistId: t.artist?.id || deezerId,
+        });
+      }
+
+      // If Deezer top tracks was small, supplement from iTunes songs
+      for (const s of itunesSongs) {
+        if (!s.trackName) continue;
+        const normT = s.trackName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (seenTrackTitles.has(normT)) continue;
+        seenTrackTitles.add(normT);
+
+        const artwork = s.artworkUrl100 ? s.artworkUrl100.replace('100x100bb', '600x600bb') : '';
+        mappedTopTracks.push({
+          id: `itunes-${s.trackId}`,
+          title: s.trackName,
+          artist: s.artistName || artistName,
+          album: s.collectionName || 'Single',
+          artworkSmall: s.artworkUrl60 || s.artworkUrl100 || artwork,
+          artworkLarge: artwork,
+          artworkOriginal: s.artworkUrl100 ? s.artworkUrl100.replace('100x100bb', '1200x1200bb') : artwork,
+          durationMs: s.trackTimeMillis || 180000,
+          previewUrl: s.previewUrl || '',
+          albumId: s.collectionId,
+          artistId: s.artistId,
+        });
+      }
+
+      // Format Discography (Albums, Singles - exclude features)
+      const mappedAlbums: any[] = [];
+      const seenAlbumTitles = new Set<string>();
+
+      // Add Deezer albums
+      for (const alb of albums) {
+        if (!alb.title) continue;
+        const normA = alb.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (seenAlbumTitles.has(normA)) continue;
+        seenAlbumTitles.add(normA);
+
+        const cover = alb.cover_xl || alb.cover_big || alb.cover_medium || alb.cover || "";
+        const isSingle = alb.record_type === 'single' || alb.record_type === 'ep';
+
+        mappedAlbums.push({
+          id: `dz-${alb.id}`,
+          title: alb.title,
+          artist: artistName,
+          artwork: cover,
+          artworkLarge: cover,
+          releaseDate: alb.release_date || '',
+          genre: 'Music',
+          recordType: isSingle ? 'single' : 'album',
+          tracks: [],
+        });
+      }
+
+      // Supplement from iTunes albums
+      for (const alb of itunesAlbums) {
+        if (!alb.collectionName) continue;
+        const normA = alb.collectionName.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (seenAlbumTitles.has(normA)) continue;
+        seenAlbumTitles.add(normA);
+
+        const cover = alb.artworkUrl100 ? alb.artworkUrl100.replace('100x100bb', '600x600bb') : '';
+        const trackCount = alb.trackCount || 1;
+        const isSingle = trackCount <= 3 || alb.collectionName.toLowerCase().includes('single') || alb.collectionName.toLowerCase().includes(' - ep');
+
+        mappedAlbums.push({
+          id: `itunes-${alb.collectionId}`,
+          title: alb.collectionName,
+          artist: alb.artistName || artistName,
+          artwork: cover,
+          artworkLarge: cover,
+          releaseDate: alb.releaseDate || '',
+          genre: alb.primaryGenreName || 'Music',
+          trackCount,
+          recordType: isSingle ? 'single' : 'album',
+          tracks: [],
+        });
+      }
+
+      // Sort discography in release date order descending (latest top, oldest bottom)
+      mappedAlbums.sort((a, b) => {
+        const timeA = a.releaseDate ? new Date(a.releaseDate).getTime() : 0;
+        const timeB = b.releaseDate ? new Date(b.releaseDate).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      const result = {
+        id: deezerId ? `dz-${deezerId}` : `art-${q.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        name: artistInfo?.name || artistName,
+        image: picture,
+        picture: picture,
+        headerImage: picture,
+        followers: fans,
+        monthlyListeners: fans,
+        topTracks: mappedTopTracks,
+        popularTracks: mappedTopTracks,
+        albums: mappedAlbums.filter(a => a.recordType === 'album'),
+        singles: mappedAlbums.filter(a => a.recordType === 'single'),
+        features: [],
+        allReleases: mappedAlbums,
+        discography: mappedAlbums,
+      };
+
+      artistDetailsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return res.json(result);
+    } catch (err: any) {
+      console.error("Artist details endpoint error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // API 4: Deezer Album Details & Tracks
   app.get("/api/deezer/album/:id", async (req, res) => {
     try {
@@ -288,44 +499,78 @@ async function startServer() {
         }
       }
 
+      // Strategy 3: Piped API Fallback Instances
+      if (candidates.length === 0) {
+        const pipedInstances = [
+          "https://api.piped.private.coffee",
+          "https://pipedapi.ducks.party",
+          "https://piped.mha.fi",
+          "https://pipedapi.kavin.rocks",
+          "https://piped.video"
+        ];
+        for (const instance of pipedInstances) {
+          try {
+            const pUrl = `${instance}/search?q=${encodeURIComponent(searchQuery)}&filter=all`;
+            const pResp = await fetch(pUrl, { signal: AbortSignal.timeout(3000) });
+            if (pResp.ok) {
+              const pData = await pResp.json();
+              const items = Array.isArray(pData.items) ? pData.items : [];
+              for (const it of items) {
+                if (it.type === 'stream' || (it.url && it.url.includes('/watch?v='))) {
+                  const vM = it.url ? it.url.match(/v=([\w-]{11})/) : null;
+                  const vid = vM ? vM[1] : (it.url ? it.url.replace('/watch?v=', '') : '');
+                  if (vid && vid.length === 11) {
+                    candidates.push({
+                      id: vid,
+                      title: it.title || "",
+                      owner: it.uploaderName || it.author || "",
+                      score: 0,
+                      durationSec: typeof it.duration === 'number' ? it.duration : 0,
+                    });
+                  }
+                }
+              }
+              if (candidates.length > 0) break;
+            }
+          } catch {}
+        }
+      }
+
       if (candidates.length === 0) {
         return res.status(404).json({ error: "No YouTube video found for query", query: q });
       }
 
-      // Score and rank candidates against target artist & song title with strict artist enforcement
+      // Score and rank candidates against target artist & song title with resilient artist matching
       const scored = candidates.map((item) => {
         const resTitle = norm(item.title);
         const resOwner = norm(item.owner);
         let score = 0;
 
-        // Strict artist validation check: artist words must appear as exact tokens in owner or title
-        const ownerWords = resOwner.split(" ");
-        const titleWordsList = resTitle.split(" ");
-        const artistInOwner = artistWords.every((w) => ownerWords.includes(w));
-        const artistInTitle = artistWords.every((w) => titleWordsList.includes(w));
+        // Flexible artist matching: check if any/all main artist tokens appear
+        const artistMatchesOwner = artistWords.filter((w) => resOwner.includes(w)).length;
+        const artistMatchesTitle = artistWords.filter((w) => resTitle.includes(w)).length;
 
-        if (!artistInOwner && !artistInTitle) {
-          // Severe penalty for mismatched artist (e.g. kanyevo vs kanye west)
-          score -= 400;
+        if (artistMatchesOwner > 0 || artistMatchesTitle > 0) {
+          score += (artistMatchesOwner / (artistWords.length || 1)) * 100;
+          score += (artistMatchesTitle / (artistWords.length || 1)) * 70;
         } else {
-          if (artistInOwner) score += 100;
-          if (artistInTitle) score += 70;
+          score -= 50;
         }
 
         // Check song title matching
         const titleMatches = titleWords.filter((w) => resTitle.includes(w)).length;
-        score += (titleMatches / (titleWords.length || 1)) * 50;
+        score += (titleMatches / (titleWords.length || 1)) * 60;
 
         // Boost official audio / topic / vevo / album version for audio search
         if (searchType === "audio") {
-          if (resOwner.includes("topic") || resOwner.includes("vevo")) score += 35;
+          if (resOwner.includes("topic") || resOwner.includes("vevo")) score += 40;
           if (resTitle.includes("album version") || resTitle.includes("album edition")) score += 40;
-          if (resTitle.includes("official audio") || resTitle.includes("audio")) score += 25;
+          if (resTitle.includes("official audio") || resTitle.includes("audio")) score += 30;
         } else {
           if (resTitle.includes("official music video") || resTitle.includes("official video")) score += 40;
         }
 
-        // Penalize unwanted fan covers, 10 hour loops, sped up, live, remixes (unless requested)
+        // Penalize unwanted fan covers, 10 hour loops, sped up, live (unless requested)
         if (!norm(targetTitle).includes("cover") && (resTitle.includes("cover") || resOwner.includes("cover"))) score -= 150;
         if (!norm(targetTitle).includes("live") && resTitle.includes("live")) score -= 60;
         if (resTitle.includes("1 hour") || resTitle.includes("10 hours") || resTitle.includes("loop")) score -= 100;
@@ -352,7 +597,8 @@ async function startServer() {
           id: s.id,
           title: s.title,
           owner: s.owner,
-          score: s.score
+          score: s.score,
+          durationSec: s.durationSec || 0,
         }))
       });
     } catch (err: any) {

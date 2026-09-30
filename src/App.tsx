@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { AudioProvider } from './context/AudioContext';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { Sidebar } from './components/Sidebar';
@@ -35,34 +36,6 @@ function AppContent() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Top Mobile Bar (No border) */}
-        <header className="md:hidden flex items-center justify-between px-5 py-4 bg-[#0e0e11] shrink-0 shadow-md">
-          <span className="font-extrabold text-white text-lg tracking-tight">Music</span>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setView('home')}
-              className={`p-2 rounded-xl transition-colors ${currentView === 'home' ? 'bg-white text-black font-bold shadow-sm' : 'text-zinc-400'}`}
-              title="Home"
-            >
-              <Home className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setView('library')}
-              className={`p-2 rounded-xl transition-colors ${currentView === 'library' ? 'bg-white text-black font-bold shadow-sm' : 'text-zinc-400'}`}
-              title="Library"
-            >
-              <Library className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setView('settings')}
-              className={`p-2 rounded-xl transition-colors ${currentView === 'settings' ? 'bg-white text-black font-bold shadow-sm' : 'text-zinc-400'}`}
-              title="Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          </div>
-        </header>
-
         {/* Scrollable Main View */}
         <main className="flex-1 overflow-y-auto px-5 sm:px-8 py-6 max-w-7xl w-full mx-auto">
           {currentView === 'home' && <HomePage />}
@@ -94,11 +67,13 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AudioProvider>
-        <NavigationProvider>
-          <AppContent />
-        </NavigationProvider>
-      </AudioProvider>
+      <ThemeProvider>
+        <AudioProvider>
+          <NavigationProvider>
+            <AppContent />
+          </NavigationProvider>
+        </AudioProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }

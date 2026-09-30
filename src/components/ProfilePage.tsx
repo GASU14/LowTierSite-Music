@@ -84,7 +84,7 @@ export const ProfilePage: React.FC = () => {
 
       {success && (
         <div className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-800 text-white text-xs shadow-md">
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-white" />
           <span>{success}</span>
         </div>
       )}

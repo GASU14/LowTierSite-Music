@@ -3,6 +3,7 @@ import { Home, Library, Settings, Link as LinkIcon, PanelLeftClose, PanelLeftOpe
 import { ViewType } from '../types';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface SidebarProps {
   currentView: ViewType;
@@ -19,6 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { playDirectUrl, isGrabbing } = useAudio();
   const { user, userProfile } = useAuth();
+  const { themeConfig } = useTheme();
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [urlInput, setUrlInput] = useState('');
 
@@ -86,9 +88,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   isCollapsed ? 'justify-center px-0 py-3' : 'gap-3.5 px-4 py-3'
                 } rounded-2xl text-sm font-semibold transition-all ${
                   isActive
-                    ? 'bg-white text-black shadow-md'
+                    ? `${themeConfig.bgAccent} ${themeConfig.buttonText} shadow-md`
                     : 'text-zinc-400 hover:text-white hover:bg-[#18181c]'
                 }`}
+                style={isActive ? { backgroundColor: themeConfig.primaryHex } : undefined}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 {!isCollapsed && <span>{item.label}</span>}

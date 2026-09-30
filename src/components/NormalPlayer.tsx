@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useAudio } from '../context/AudioContext';
+import { useTheme } from '../context/ThemeContext';
 import { LyricsView } from './LyricsView';
 import {
   ChevronDown,
@@ -18,8 +19,10 @@ import {
   Maximize2,
   Minimize2,
   ListPlus,
+  ListMusic,
 } from 'lucide-react';
 import { AddToPlaylistModal } from './AddToPlaylistModal';
+import { QueuePanel } from './QueuePanel';
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -62,10 +65,13 @@ export const NormalPlayer: React.FC = () => {
     switchTrackSource,
   } = useAudio();
 
+  const { themeConfig, themeColor } = useTheme();
+
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
 
   useEffect(() => {
     const handleFsChange = () => {
@@ -123,25 +129,25 @@ export const NormalPlayer: React.FC = () => {
           <div className="absolute inset-0 bg-gradient-to-b from-[#09090b]/70 via-[#09090b]/90 to-[#09090b]" />
         </div>
 
-        {/* Top Bar: Minimize button and Track Info (No borders) */}
-        <div className="max-w-6xl w-full mx-auto flex items-center justify-between pb-6 shrink-0 relative z-10">
+        {/* Top Header Bar with Minimize & Audio/Video Switcher */}
+        <div className="w-full flex items-center justify-between mb-4 relative z-30">
           <button
             id="minimize-player-btn"
             onClick={() => setIsExpandedPlayer(false)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-zinc-900/90 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors shadow-md"
+            className="p-2.5 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all shadow-lg active:scale-95"
+            title="Minimize player"
           >
-            <ChevronDown className="w-4 h-4" />
-            <span className="text-xs font-semibold">Minimize</span>
+            <ChevronDown className="w-5 h-5" />
           </button>
 
-          {/* Song vs Music Video Mode Switcher */}
-          <div className="flex items-center p-1 bg-zinc-900/90 rounded-full shadow-md">
+          {/* Audio / Video Switcher Pill */}
+          <div className="flex items-center bg-zinc-900/90 p-1 rounded-full shadow-lg backdrop-blur-md">
             <button
-              id="player-mode-song-btn"
+              id="normal-player-audio-toggle-btn"
               onClick={() => setIsVideoMode(false)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 !isVideoMode
-                  ? 'bg-white text-black font-bold shadow-sm'
+                  ? `${themeConfig.bgAccent} ${themeConfig.buttonText} shadow-md`
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -149,11 +155,11 @@ export const NormalPlayer: React.FC = () => {
               <span>Audio</span>
             </button>
             <button
-              id="player-mode-video-btn"
+              id="normal-player-video-toggle-btn"
               onClick={() => setIsVideoMode(true)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 isVideoMode
-                  ? 'bg-white text-black font-bold shadow-sm'
+                  ? `${themeConfig.bgAccent} ${themeConfig.buttonText} shadow-md`
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -162,25 +168,23 @@ export const NormalPlayer: React.FC = () => {
             </button>
           </div>
 
-          {/* Switch to Official Music Video if available */}
-          <div className="flex items-center gap-2">
-            {isVideoMode && musicVideoId && musicVideoId !== activeVideoId && (
-              <button
-                id="switch-official-video-btn"
-                onClick={() => switchVideoSource(musicVideoId)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-xs text-white font-medium transition-all shadow-md"
-              >
-                <Video className="w-3.5 h-3.5" />
-                <span>Official Video</span>
-              </button>
-            )}
-          </div>
+          <div className="w-10" />
         </div>
 
-        {/* Main Content: Left Column (Cover + Controls), Right Column (Lyrics) */}
-        <div className="max-w-6xl w-full mx-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 items-center relative z-10">
+        {/* Main Content: Left Column (Cover + Controls), Center Column (Lyrics level with cover), Right Column (Queue when active) */}
+        <div
+          className={`w-full mx-auto flex-1 transition-all duration-300 relative z-10 pt-8 sm:pt-10 ${
+            showQueue
+              ? 'max-w-7xl flex flex-col lg:flex-row gap-6 lg:gap-8 items-start'
+              : 'max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-start'
+          }`}
+        >
           {/* Left Column: Cover / Video & Primary Controls */}
-          <div className="flex flex-col items-center max-w-md mx-auto w-full">
+          <div
+            className={`flex flex-col items-center mx-auto w-full ${
+              showQueue ? 'lg:w-80 xl:w-96 shrink-0' : 'max-w-md'
+            }`}
+          >
             {/* Cover Art OR Live Video (No borders) */}
             {!isVideoMode ? (
               <div
@@ -297,7 +301,14 @@ export const NormalPlayer: React.FC = () => {
                                 : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                             }`}
                           >
-                            <span className="truncate">{src.title}</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate flex-1">{src.title}</span>
+                              {src.durationSec && src.durationSec > 0 && (
+                                <span className={`text-[10px] shrink-0 ${currentSourceId === src.id ? 'text-zinc-800 font-bold' : 'text-zinc-400'}`}>
+                                  {formatTime(src.durationSec)}
+                                </span>
+                              )}
+                            </div>
                             <span className={`text-[10px] ${currentSourceId === src.id ? 'text-zinc-700' : 'text-zinc-500'}`}>
                               {src.owner}
                             </span>
@@ -308,11 +319,25 @@ export const NormalPlayer: React.FC = () => {
                   )}
                 </div>
 
+                {/* Queue Button in Full Player (in between source and like) */}
+                <button
+                  id="normal-player-queue-btn"
+                  onClick={() => setShowQueue(!showQueue)}
+                  className={`p-3 rounded-2xl transition-colors shrink-0 shadow-md backdrop-blur-md flex items-center justify-center w-11 h-11 ${
+                    showQueue
+                      ? 'bg-white text-black font-semibold shadow-lg'
+                      : 'bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                  title="Toggle Queue"
+                >
+                  <ListMusic className="w-5 h-5" />
+                </button>
+
                 <button
                   id="normal-player-save-btn"
                   onClick={() => toggleSaveTrack(currentTrack)}
                   className="p-3 rounded-2xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors shrink-0 shadow-md backdrop-blur-md"
-                  title={isSaved ? 'Remove from saved' : 'Save track'}
+                  title={isSaved ? 'Remove from favorited' : 'Favorite track'}
                 >
                   <Heart
                     className={`w-5 h-5 ${isSaved ? 'fill-white text-white' : ''}`}
@@ -326,8 +351,8 @@ export const NormalPlayer: React.FC = () => {
               <div className="relative flex items-center group py-2 mb-2">
                 <div className="w-full h-1.5 group-hover:h-2 bg-zinc-800/80 rounded-full overflow-hidden relative transition-all">
                   <div
-                    className="h-full bg-white rounded-full transition-colors"
-                    style={{ width: `${progressPercent}%` }}
+                    className="h-full rounded-full transition-all theme-bg-accent"
+                    style={{ width: `${progressPercent}%`, backgroundColor: themeConfig.primaryHex }}
                   />
                 </div>
                 <div
@@ -376,11 +401,12 @@ export const NormalPlayer: React.FC = () => {
                 id="normal-play-btn"
                 onClick={togglePlay}
                 disabled={isGrabbing}
-                className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:bg-zinc-200 transition-transform active:scale-95 shadow-2xl disabled:opacity-50"
+                className={`w-16 h-16 rounded-full flex items-center justify-center hover:opacity-90 transition-transform active:scale-95 shadow-2xl disabled:opacity-50 ${themeConfig.bgAccent} ${themeConfig.buttonText}`}
+                style={{ backgroundColor: themeConfig.primaryHex }}
                 title={isPlaying ? 'Pause' : 'Play'}
               >
                 {isGrabbing ? (
-                  <Radio className="w-6 h-6 animate-pulse text-zinc-800" />
+                  <Radio className="w-6 h-6 animate-pulse" />
                 ) : isPlaying ? (
                   <Pause className="w-7 h-7 fill-current" />
                 ) : (
@@ -413,34 +439,23 @@ export const NormalPlayer: React.FC = () => {
                 )}
               </button>
             </div>
-
-            {/* Volume Slider */}
-            <div className="w-full max-w-xs flex items-center gap-3 px-4 py-2.5 bg-zinc-900/70 backdrop-blur-md rounded-2xl shadow-md">
-              <button
-                onClick={toggleMute}
-                className="text-zinc-400 hover:text-white transition-colors"
-              >
-                {isMuted || volume === 0 ? (
-                  <VolumeX className="w-4 h-4" />
-                ) : (
-                  <Volume2 className="w-4 h-4" />
-                )}
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={isMuted ? 0 : volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
-              />
-            </div>
           </div>
 
-          {/* Right Column: Synced Lyrics View */}
-          <div className="h-[460px] lg:h-[540px] w-full">
+          {/* Middle / Right Column: Synced Lyrics View (compressed slightly in width when queue is open) */}
+          <div
+            className={`h-[480px] lg:h-[580px] transition-all duration-300 ${
+              showQueue ? 'w-full lg:flex-1 min-w-[280px]' : 'w-full'
+            }`}
+          >
             <LyricsView className="h-full shadow-2xl" />
           </div>
+
+          {/* Right Column: Queue Panel (Spotify style: Next Up) */}
+          {showQueue && (
+            <div className="w-full lg:w-80 xl:w-96 shrink-0 h-[480px] lg:h-[580px] animate-in fade-in slide-in-from-right-4 duration-300">
+              <QueuePanel onClose={() => setShowQueue(false)} />
+            </div>
+          )}
         </div>
       </div>
 

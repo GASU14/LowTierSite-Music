@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Check, Loader2, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { searchDeezerArtists } from '../services/api';
+import { searchDeezerArtists, KNOWN_ARTIST_IMAGES, normalizeFuzzy, createAlbumFallbackDataUrl } from '../services/api';
 
 interface ModalArtist {
   id: string | number;
@@ -75,12 +75,15 @@ export const ArtistSelectionModal: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [catalogArtists, setCatalogArtists] = useState<ModalArtist[]>(() =>
-    POPULAR_ARTIST_NAMES.map((name, i) => ({
-      id: `init-${i}`,
-      name,
-      genre: 'Artist',
-      image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
-    }))
+    POPULAR_ARTIST_NAMES.map((name, i) => {
+      const norm = normalizeFuzzy(name);
+      return {
+        id: `init-${i}`,
+        name,
+        genre: 'Artist',
+        image: KNOWN_ARTIST_IMAGES[norm] || createAlbumFallbackDataUrl(name),
+      };
+    })
   );
   const [searchResults, setSearchResults] = useState<ModalArtist[]>([]);
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
@@ -115,7 +118,7 @@ export const ArtistSelectionModal: React.FC = () => {
               id: `init-${i + idx}`,
               name,
               genre: 'Artist',
-              image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
+              image: KNOWN_ARTIST_IMAGES[normalizeFuzzy(name)] || createAlbumFallbackDataUrl(name),
             });
           })
         );
@@ -128,7 +131,7 @@ export const ArtistSelectionModal: React.FC = () => {
                 id: `init-${idx}`,
                 name: n,
                 genre: 'Artist',
-                image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
+                image: KNOWN_ARTIST_IMAGES[normalizeFuzzy(n)] || createAlbumFallbackDataUrl(n),
               };
             })
           );
@@ -304,11 +307,11 @@ export const ArtistSelectionModal: React.FC = () => {
                     isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0d0d0f]' : ''
                   }`}>
                     <img
-                      src={artist.image || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80'}
+                      src={artist.image || createAlbumFallbackDataUrl(artist.name)}
                       alt={artist.name}
                       referrerPolicy="no-referrer"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80';
+                        (e.target as HTMLImageElement).src = createAlbumFallbackDataUrl(artist.name);
                       }}
                       className={`w-full h-full object-cover transition-transform duration-300 ${
                         isSelected ? 'scale-105 brightness-110' : 'group-hover:scale-105'

@@ -19,10 +19,18 @@ export interface Track {
   audioUrl?: string;
 }
 
+export interface LyricWord {
+  word: string;
+  time: number; // in seconds
+  durationSec?: number;
+}
+
 export interface LyricLine {
   id: number;
   time: number; // in seconds
+  endTime?: number; // in seconds
   text: string;
+  words?: LyricWord[];
 }
 
 export interface LyricsData {
@@ -30,6 +38,7 @@ export interface LyricsData {
   plainLyrics: string;
   isInstrumental: boolean;
   hasSynced: boolean;
+  provider?: string;
 }
 
 export type ViewType = 'home' | 'library' | 'albums' | 'artist' | 'album' | 'mix' | 'profile' | 'settings';
@@ -91,6 +100,7 @@ export interface Playlist {
 export interface UserSettings {
   preferVideo: boolean;
   ambientLighting: boolean;
+  lyricSyncStep?: number;
 }
 
 export interface UserTasteProfile {
@@ -120,8 +130,11 @@ export interface UserProfile {
   selectedArtists?: string[];
   hasCompletedArtistSelection?: boolean;
   settings: UserSettings;
+  themeColor?: string;
+  lyricProviders?: any[];
+  lyricSyncStep?: number;
   lyricsOffsets?: Record<string, number>;
-  trackSources?: Record<string, Array<{ id: string; title: string; owner: string }>>;
+  trackSources?: Record<string, Array<{ id: string; title: string; owner: string; durationSec?: number }>>;
   trackSourceSelections?: Record<string, string>;
   createdAt?: number;
 }

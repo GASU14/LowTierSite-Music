@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Loader2, ArrowLeft, Heart, Radio } from 'lucide-react';
+import { Clock, Loader2, ArrowLeft, Heart, Radio, Play, Shuffle } from 'lucide-react';
 import { useNavigation } from '../context/NavigationContext';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { getMixTracks } from '../services/api';
 import { DailyMixItem, Track } from '../types';
 import { MixDisk } from './MixDisk';
@@ -10,6 +11,7 @@ import { MixDisk } from './MixDisk';
 export const DailyMixView: React.FC = () => {
   const { selectedMix, openArtist, goBack, canGoBack } = useNavigation();
   const { playTrack, currentTrack, isPlaying, toggleFavorite, isFavorite, getTrackDuration, duration } = useAudio();
+  const { themeConfig } = useTheme();
 
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -86,7 +88,7 @@ export const DailyMixView: React.FC = () => {
           <MixDisk
             title={selectedMix.title}
             mixNumber={selectedMix.id.replace(/[^\d]/g, '') || '1'}
-            gradient={selectedMix.gradient || 'emerald'}
+            gradient={selectedMix.gradient || 'indigo'}
             size="lg"
             isSpinning={isPlaying && tracks.some((t) => t.id === currentTrack?.id)}
           />
@@ -104,7 +106,7 @@ export const DailyMixView: React.FC = () => {
             {selectedMix.title}
           </h1>
 
-          <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-xs text-zinc-400 font-medium">
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-xs text-zinc-400 font-medium mb-4">
             <span className="text-zinc-300 font-semibold">Refreshes every day at 12:00 AM CST</span>
             {tracks.length > 0 && (
               <>
@@ -112,6 +114,36 @@ export const DailyMixView: React.FC = () => {
                 <span>{tracks.length} songs</span>
               </>
             )}
+          </div>
+
+          {/* Play & Shuffle 1:1 Square Buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              id="mix-play-btn"
+              onClick={() => {
+                if (tracks.length > 0) playTrack(tracks[0], tracks);
+              }}
+              disabled={tracks.length === 0}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xl hover:opacity-90 active:scale-95 disabled:opacity-50 shrink-0 ${themeConfig.bgAccent} ${themeConfig.buttonText}`}
+              style={{ backgroundColor: themeConfig.primaryHex }}
+              title="Play"
+            >
+              <Play className="w-5 h-5 fill-current ml-0.5" />
+            </button>
+            <button
+              id="mix-shuffle-btn"
+              onClick={() => {
+                if (tracks.length > 0) {
+                  const shuffled = [...tracks].sort(() => Math.random() - 0.5);
+                  playTrack(shuffled[0], shuffled);
+                }
+              }}
+              disabled={tracks.length === 0}
+              className="w-12 h-12 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-white flex items-center justify-center transition-all shadow-md active:scale-95 disabled:opacity-50 shrink-0"
+              title="Shuffle"
+            >
+              <Shuffle className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </div>

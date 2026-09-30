@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+:root {
+  --theme-accent: #ffffff;
+  --theme-accent-rgb: 255, 255, 255;
+  --theme-glow: rgba(var(--theme-accent-rgb), 0.3);
+}
+
 @layer base {
   body {
     background-color: #09090b;
@@ -8,6 +14,30 @@
     overflow-x: hidden;
     user-select: none;
   }
+}
+
+.theme-bg-accent {
+  background-color: var(--theme-accent) !important;
+}
+
+.theme-text-accent {
+  color: var(--theme-accent) !important;
+}
+
+.theme-border-accent {
+  border-color: var(--theme-accent) !important;
+}
+
+.theme-fill-accent {
+  fill: var(--theme-accent) !important;
+}
+
+.theme-ring-accent {
+  --tw-ring-color: var(--theme-accent) !important;
+}
+
+.theme-glow {
+  box-shadow: 0 0 25px rgba(var(--theme-accent-rgb), 0.35);
 }
 
 #yt-audio-player-host iframe {

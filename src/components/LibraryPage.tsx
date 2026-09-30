@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '../context/NavigationContext';
-import { searchDeezerArtists, fixAndEnrichTracksWithItunes } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
+import { searchDeezerArtists } from '../services/api';
 import {
   Play,
   Heart,
@@ -14,14 +15,9 @@ import {
   Shuffle,
   ListPlus,
   Pencil,
-  Image as ImageIcon,
   Upload,
   X,
   Users,
-  UserCheck,
-  Sparkles,
-  Loader2,
-  CheckCircle2,
 } from 'lucide-react';
 import { Track, Playlist } from '../types';
 import { AddToPlaylistModal } from './AddToPlaylistModal';
@@ -90,8 +86,6 @@ const FollowedArtistCard: React.FC<{ artistName: string }> = ({ artistName }) =>
 export const LibraryPage: React.FC = () => {
   const {
     savedTracks,
-    history,
-    queue,
     currentTrack,
     isPlaying,
     playTrack,
@@ -107,12 +101,12 @@ export const LibraryPage: React.FC = () => {
     deletePlaylist,
     removeTrackFromPlaylist,
     selectedArtists,
-    toggleFollowArtist,
     openArtistSelection,
   } = useAuth();
-  const { openArtist } = useNavigation();
 
-  const [activeTab, setActiveTab] = useState<'saved' | 'playlists' | 'artists' | 'queue' | 'history'>('saved');
+  const { themeConfig } = useTheme();
+
+  const [activeTab, setActiveTab] = useState<'favorited' | 'playlists' | 'artists'>('favorited');
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
 
   // Modals state
@@ -126,15 +120,6 @@ export const LibraryPage: React.FC = () => {
   const [creationMode, setCreationMode] = useState<'empty' | 'csv'>('empty');
   const [csvText, setCsvText] = useState('');
   const [parsedTracks, setParsedTracks] = useState<Track[]>([]);
-
-  // iTunes Fix / Sync State
-  const [isFixingItunes, setIsFixingItunes] = useState(false);
-  const [itunesProgress, setItunesProgress] = useState<{ completed: number; total: number } | null>(null);
-  const [itunesSuccessMsg, setItunesSuccessMsg] = useState<string | null>(null);
-
-  const [isFixingModalTracks, setIsFixingModalTracks] = useState(false);
-  const [itunesModalProgress, setItunesModalProgress] = useState<{ completed: number; total: number } | null>(null);
-  const [itunesModalMsg, setItunesModalMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -150,7 +135,6 @@ export const LibraryPage: React.FC = () => {
     const tracks: Track[] = [];
     if (lines.length === 0) return tracks;
 
-    // Helper to split CSV row respecting quotes
     const parseCsvRow = (row: string): string[] => {
       const result: string[] = [];
       let current = '';
@@ -176,7 +160,6 @@ export const LibraryPage: React.FC = () => {
     let albumIdx = -1;
     let startIndex = 0;
 
-    // Detect header columns for Spotify, Apple Music, Tidal, etc.
     headerParts.forEach((h, idx) => {
       if (h.includes('track name') || h.includes('song name') || h.includes('title') || h === 'name') {
         if (titleIdx === -1) titleIdx = idx;
@@ -190,82 +173,59 @@ export const LibraryPage: React.FC = () => {
     });
 
     if (titleIdx !== -1 || artistIdx !== -1) {
-      startIndex = 1; // Has header row
+      startIndex = 1;
     } else {
-      // Fallback defaults if no header recognized
       titleIdx = 0;
       artistIdx = 1;
       startIndex = 0;
     }
 
     for (let i = startIndex; i < lines.length; i++) {
-      const parts = parseCsvRow(lines[i]);
-      if (parts.length === 0 || (parts.length === 1 && !parts[0])) continue;
+      const row = parseCsvRow(lines[i]);
+      if (row.length === 0) continue;
 
-      let title = '';
-      let artist = '';
-      let album = 'CSV Import';
+      const title = row[titleIdx] || row[0] || 'Unknown Title';
+      const artist = row[artistIdx] || row[1] || 'Unknown Artist';
+      const album = (albumIdx !== -1 && row[albumIdx]) ? row[albumIdx] : 'Single';
 
-      if (titleIdx !== -1 && parts[titleIdx]) {
-        title = parts[titleIdx];
-      }
-      if (artistIdx !== -1 && parts[artistIdx]) {
-        artist = parts[artistIdx];
-      }
-      if (albumIdx !== -1 && parts[albumIdx]) {
-        album = parts[albumIdx];
-      }
+      if (!title || title.toLowerCase() === 'track name' || title.toLowerCase() === 'title') continue;
 
-      // If only 1 column or title missing, try splitting by dash or tab
-      if (!title && parts.length > 0) {
-        title = parts[0];
-      }
-      if (!artist && parts.length > 1) {
-        artist = parts[1];
-      } else if (!artist && title.includes(' - ')) {
-        const splitDash = title.split(' - ');
-        artist = splitDash[0].trim();
-        title = splitDash.slice(1).join(' - ').trim();
-      }
-
-      if (title) {
-        tracks.push({
-          id: `csv-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
-          title,
-          artist: artist || 'Unknown Artist',
-          album: album || 'CSV Import',
-          artworkSmall: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=300&q=80',
-          artworkLarge: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=600&q=80',
-          artworkOriginal: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80',
-          durationMs: 180000,
-        });
-      }
+      tracks.push({
+        id: `csv-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+        title,
+        artist,
+        album,
+        artworkSmall: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=100&q=80',
+        artworkLarge: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=500&q=80',
+        artworkOriginal: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
+        durationMs: 180000,
+        previewUrl: '',
+      });
     }
+
     return tracks;
   };
 
   const handleCsvFileSelect = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target?.result as string || '';
-      setCsvText(text);
-      const tracks = parseCsvTracks(text);
-      setParsedTracks(tracks);
-      if (!playlistTitleInput.trim() && file.name) {
-        const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-        setPlaylistTitleInput(nameWithoutExt);
+      const text = e.target?.result as string;
+      if (text) {
+        setCsvText(text);
+        const parsed = parseCsvTracks(text);
+        setParsedTracks(parsed);
       }
     };
     reader.readAsText(file);
   };
 
-  const handleImageUpload = async (file: File, isEdit = false) => {
+  const handleImageUpload = async (file: File) => {
     try {
       setIsOptimizingImage(true);
-      const optimized = await optimizePlaylistImage(file);
-      setPlaylistImageInput(optimized);
+      const dataUrl = await optimizePlaylistImage(file);
+      setPlaylistImageInput(dataUrl);
     } catch (err) {
-      console.error('Failed to optimize playlist image:', err);
+      console.error('Failed to optimize image:', err);
     } finally {
       setIsOptimizingImage(false);
     }
@@ -274,112 +234,26 @@ export const LibraryPage: React.FC = () => {
   const handleOpenCreateModal = () => {
     setPlaylistTitleInput('');
     setPlaylistImageInput(null);
+    setCreationMode('empty');
     setCsvText('');
     setParsedTracks([]);
-    setCreationMode('empty');
     setIsCreatingPlaylist(true);
+  };
+
+  const handleCreatePlaylist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!playlistTitleInput.trim()) return;
+
+    const initialTracks = creationMode === 'csv' ? parsedTracks : [];
+    await createPlaylist(playlistTitleInput.trim(), '', playlistImageInput || undefined, initialTracks);
+    setIsCreatingPlaylist(false);
   };
 
   const handleOpenEditModal = (pl: Playlist) => {
     setPlaylistTitleInput(pl.title);
     setPlaylistImageInput(pl.coverArt || null);
     setIsEditingPlaylist(true);
-  };
-
-  const handleCreatePlaylist = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!playlistTitleInput.trim()) return;
-    let initialTracks = creationMode === 'csv' ? parsedTracks : [];
-
-    // Automatically enrich CSV tracks with iTunes if creating from CSV
-    if (creationMode === 'csv' && initialTracks.length > 0) {
-      try {
-        const { enrichedTracks } = await fixAndEnrichTracksWithItunes(initialTracks);
-        if (enrichedTracks.length > 0) {
-          initialTracks = enrichedTracks;
-          if (!playlistImageInput) {
-            const topCover = enrichedTracks.find((t) => t.artworkLarge || t.artworkOriginal);
-            if (topCover) {
-              setPlaylistImageInput(topCover.artworkLarge || topCover.artworkOriginal);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Auto iTunes enrichment on create failed:', err);
-      }
-    }
-
-    const pl = await createPlaylist(playlistTitleInput.trim(), '', playlistImageInput || undefined, initialTracks);
-    setPlaylistTitleInput('');
-    setPlaylistImageInput(null);
-    setCsvText('');
-    setParsedTracks([]);
-    setItunesModalMsg(null);
-    setCreationMode('empty');
-    setIsCreatingPlaylist(false);
     setSelectedPlaylist(pl);
-  };
-
-  const handleFixModalTracksWithItunes = async () => {
-    if (parsedTracks.length === 0) return;
-    setIsFixingModalTracks(true);
-    setItunesModalMsg(null);
-    setItunesModalProgress({ completed: 0, total: parsedTracks.length });
-
-    try {
-      const { enrichedTracks, matchCount } = await fixAndEnrichTracksWithItunes(
-        parsedTracks,
-        (completed, total) => setItunesModalProgress({ completed, total })
-      );
-      setParsedTracks(enrichedTracks);
-      if (!playlistImageInput) {
-        const topCover = enrichedTracks.find((t) => t.artworkLarge || t.artworkOriginal);
-        if (topCover) {
-          setPlaylistImageInput(topCover.artworkLarge || topCover.artworkOriginal);
-        }
-      }
-      setItunesModalMsg(`✓ Enriched ${matchCount} of ${enrichedTracks.length} tracks with iTunes titles & high-res artwork`);
-    } catch (err) {
-      console.error('Failed to fix modal tracks with iTunes:', err);
-    } finally {
-      setIsFixingModalTracks(false);
-      setItunesModalProgress(null);
-    }
-  };
-
-  const handleFixPlaylistWithItunes = async () => {
-    if (!currentActivePlaylist || currentActivePlaylist.tracks.length === 0) return;
-    setIsFixingItunes(true);
-    setItunesSuccessMsg(null);
-    setItunesProgress({ completed: 0, total: currentActivePlaylist.tracks.length });
-
-    try {
-      const { enrichedTracks, matchCount } = await fixAndEnrichTracksWithItunes(
-        currentActivePlaylist.tracks,
-        (completed, total) => setItunesProgress({ completed, total })
-      );
-
-      let updatedCover = currentActivePlaylist.coverArt;
-      if (!updatedCover || updatedCover.includes('unsplash')) {
-        const topCover = enrichedTracks.find((t) => t.artworkLarge || t.artworkOriginal);
-        if (topCover) {
-          updatedCover = topCover.artworkLarge || topCover.artworkOriginal;
-        }
-      }
-
-      await updatePlaylist(currentActivePlaylist.id, {
-        tracks: enrichedTracks,
-        coverArt: updatedCover,
-      });
-
-      setItunesSuccessMsg(`Successfully matched & fixed ${matchCount} of ${enrichedTracks.length} tracks using iTunes API!`);
-      setTimeout(() => setItunesSuccessMsg(null), 6000);
-    } catch (err) {
-      console.error('Failed to fix playlist with iTunes:', err);
-    } finally {
-      setIsFixingItunes(false);
-      setItunesProgress(null);
-    }
   };
 
   const handleUpdatePlaylist = async (e: React.FormEvent) => {
@@ -392,14 +266,6 @@ export const LibraryPage: React.FC = () => {
     setIsEditingPlaylist(false);
   };
 
-  const getList = (): Track[] => {
-    if (activeTab === 'saved') return savedTracks;
-    if (activeTab === 'queue') return queue;
-    return history;
-  };
-
-  const currentList = getList();
-
   const handleTrackClick = (track: Track, listToUse: Track[]) => {
     if (currentTrack?.id === track.id) {
       togglePlay();
@@ -408,7 +274,6 @@ export const LibraryPage: React.FC = () => {
     }
   };
 
-  // Calculate total playlist duration
   const totalPlaylistDurationMs = (currentActivePlaylist?.tracks || []).reduce(
     (acc, t) => acc + (t.durationMs || 180000),
     0
@@ -432,22 +297,22 @@ export const LibraryPage: React.FC = () => {
           )}
         </div>
 
-        {/* Tab Pills */}
+        {/* Tab Pills (Favorited, Playlists, Artists) */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <button
-            id="tab-saved-tracks"
+            id="tab-favorited-tracks"
             onClick={() => {
               setSelectedPlaylist(null);
-              setActiveTab('saved');
+              setActiveTab('favorited');
             }}
             className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold transition-all ${
-              activeTab === 'saved' && !currentActivePlaylist
+              activeTab === 'favorited' && !currentActivePlaylist
                 ? 'bg-white text-black shadow-md'
                 : 'bg-[#141417] text-zinc-400 hover:text-white'
             }`}
           >
             <Heart className="w-3.5 h-3.5" />
-            <span>Saved ({savedTracks.length})</span>
+            <span>Favorited ({savedTracks.length})</span>
           </button>
 
           <button
@@ -481,42 +346,10 @@ export const LibraryPage: React.FC = () => {
             <Users className="w-3.5 h-3.5" />
             <span>Artists ({selectedArtists.length})</span>
           </button>
-
-          <button
-            id="tab-queue"
-            onClick={() => {
-              setSelectedPlaylist(null);
-              setActiveTab('queue');
-            }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold transition-all ${
-              activeTab === 'queue' && !currentActivePlaylist
-                ? 'bg-white text-black shadow-md'
-                : 'bg-[#141417] text-zinc-400 hover:text-white'
-            }`}
-          >
-            <ListMusic className="w-3.5 h-3.5" />
-            <span>Queue ({queue.length})</span>
-          </button>
-
-          <button
-            id="tab-history"
-            onClick={() => {
-              setSelectedPlaylist(null);
-              setActiveTab('history');
-            }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-semibold transition-all ${
-              activeTab === 'history' && !currentActivePlaylist
-                ? 'bg-white text-black shadow-md'
-                : 'bg-[#141417] text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>History ({history.length})</span>
-          </button>
         </div>
       </div>
 
-      {/* Playlist Detail View - Identical Look & Feel to AlbumView */}
+      {/* Playlist Detail View */}
       {currentActivePlaylist ? (
         <div className="flex flex-col gap-6 animate-in fade-in duration-200">
           {/* Back button */}
@@ -529,7 +362,7 @@ export const LibraryPage: React.FC = () => {
             <span>Back to Playlists</span>
           </button>
 
-          {/* Hero Header matching AlbumView */}
+          {/* Hero Header */}
           <div className="flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8 p-6 md:p-8 rounded-3xl bg-gradient-to-b from-zinc-800/60 via-[#141417] to-[#121215] shadow-2xl">
             {/* Artwork with Edit Cover hover effect */}
             <div
@@ -579,8 +412,8 @@ export const LibraryPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+              {/* Action Buttons: 1:1 Square with graphic icon only */}
+              <div className="flex items-center gap-3">
                 {currentActivePlaylist.tracks.length > 0 && (
                   <>
                     <button
@@ -588,10 +421,11 @@ export const LibraryPage: React.FC = () => {
                       onClick={() =>
                         playTrack(currentActivePlaylist.tracks[0], currentActivePlaylist.tracks)
                       }
-                      className="px-7 py-3 bg-white text-black font-bold rounded-2xl hover:bg-zinc-200 transition-all flex items-center gap-2 shadow-xl active:scale-95 text-xs sm:text-sm"
+                      className={`w-12 h-12 rounded-2xl hover:opacity-90 transition-all flex items-center justify-center shadow-xl active:scale-95 shrink-0 ${themeConfig.bgAccent} ${themeConfig.buttonText}`}
+                      style={{ backgroundColor: themeConfig.primaryHex }}
+                      title="Play"
                     >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>Play</span>
+                      <Play className="w-5 h-5 fill-current ml-0.5" />
                     </button>
 
                     <button
@@ -602,31 +436,10 @@ export const LibraryPage: React.FC = () => {
                         );
                         playTrack(shuffled[0], shuffled);
                       }}
-                      className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl transition-all flex items-center gap-2 text-xs font-semibold shadow-md active:scale-95"
+                      className="w-12 h-12 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl transition-all flex items-center justify-center shadow-md active:scale-95 shrink-0"
+                      title="Shuffle"
                     >
-                      <Shuffle className="w-4 h-4" />
-                      <span>Shuffle</span>
-                    </button>
-
-                    {/* iTunes API Fix & Match Button */}
-                    <button
-                      id="fix-itunes-playlist-btn"
-                      onClick={handleFixPlaylistWithItunes}
-                      disabled={isFixingItunes}
-                      className="px-4 py-3 bg-white text-black font-bold hover:bg-zinc-200 rounded-2xl transition-all flex items-center gap-2 text-xs shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
-                      title="Compare imported tracks with iTunes API and fix titles, artwork, album names, and sample audio"
-                    >
-                      {isFixingItunes ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Matching iTunes ({itunesProgress?.completed || 0}/{itunesProgress?.total || currentActivePlaylist.tracks.length})...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5 text-black" />
-                          <span>Fix / Match with iTunes</span>
-                        </>
-                      )}
+                      <Shuffle className="w-5 h-5" />
                     </button>
                   </>
                 )}
@@ -634,37 +447,17 @@ export const LibraryPage: React.FC = () => {
                 <button
                   id="edit-playlist-header-btn"
                   onClick={() => handleOpenEditModal(currentActivePlaylist)}
-                  className="px-4 py-3 bg-zinc-800/80 hover:bg-zinc-700 text-white rounded-2xl transition-all flex items-center gap-2 text-xs font-semibold shadow-md active:scale-95"
+                  className="w-12 h-12 bg-zinc-800/80 hover:bg-zinc-700 text-white rounded-2xl transition-all flex items-center justify-center shadow-md active:scale-95 shrink-0"
+                  title="Edit Playlist"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Edit Playlist</span>
-                </button>
-
-                <button
-                  id="delete-playlist-header-btn"
-                  onClick={() => {
-                    deletePlaylist(currentActivePlaylist.id);
-                    setSelectedPlaylist(null);
-                  }}
-                  className="px-4 py-3 bg-zinc-900/60 hover:bg-red-950/60 text-zinc-400 hover:text-red-300 rounded-2xl transition-all flex items-center gap-2 text-xs font-semibold shadow-sm"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete</span>
+                  <Pencil className="w-5 h-5" />
                 </button>
               </div>
-
-              {itunesSuccessMsg && (
-                <div className="mt-4 flex items-center gap-2 px-4 py-3 rounded-2xl bg-zinc-800 text-white text-xs shadow-md animate-in fade-in duration-200">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>{itunesSuccessMsg}</span>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Tracks Table / List */}
+          {/* Tracks Table */}
           <div className="flex flex-col gap-2">
-            {/* Table Header */}
             <div className="flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
               <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
                 <div className="w-6 text-center shrink-0">#</div>
@@ -676,7 +469,6 @@ export const LibraryPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Tracks Rows */}
             {currentActivePlaylist.tracks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-zinc-500 gap-2">
                 <p className="text-sm">This playlist is currently empty.</p>
@@ -763,6 +555,7 @@ export const LibraryPage: React.FC = () => {
                           toggleSaveTrack(track);
                         }}
                         className="p-1 text-zinc-400 hover:text-white transition-colors"
+                        title={isSaved ? 'Favorited' : 'Favorite'}
                       >
                         <Heart
                           className={`w-4 h-4 ${isSaved ? 'fill-white text-white' : ''}`}
@@ -782,7 +575,7 @@ export const LibraryPage: React.FC = () => {
           </div>
         </div>
       ) : activeTab === 'playlists' ? (
-        /* Playlists Grid - Clean visual cards without borders */
+        /* Playlists Grid */
         <div>
           {playlists.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-3">
@@ -834,7 +627,7 @@ export const LibraryPage: React.FC = () => {
           )}
         </div>
       ) : activeTab === 'artists' ? (
-        /* Artists Grid - Clean followed artist circles without borders */
+        /* Artists Grid */
         <div>
           {selectedArtists.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-3">
@@ -871,21 +664,17 @@ export const LibraryPage: React.FC = () => {
           )}
         </div>
       ) : (
-        /* Saved, Queue, History track lists */
+        /* Favorited tracks list */
         <div>
-          {currentList.length === 0 ? (
+          {savedTracks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-2">
               <p className="text-sm">
-                {activeTab === 'saved'
-                  ? 'No saved tracks yet. Click the heart icon on any song to add it here.'
-                  : activeTab === 'queue'
-                  ? 'Queue is empty. Add songs to play next.'
-                  : 'No playback history yet.'}
+                No favorited tracks yet. Click the heart icon on any song to add it here.
               </p>
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {currentList.map((track, idx) => {
+              {savedTracks.map((track, idx) => {
                 const isCurrent =
                   currentTrack?.id === track.id || currentTrack?.title === track.title;
                 const isSaved = savedTracks.some((t) => t.id === track.id);
@@ -894,7 +683,7 @@ export const LibraryPage: React.FC = () => {
                   <div
                     key={`${track.id}-${idx}`}
                     id={`library-track-${track.id}`}
-                    onClick={() => handleTrackClick(track, currentList)}
+                    onClick={() => handleTrackClick(track, savedTracks)}
                     className={`group flex items-center justify-between px-4 py-2.5 rounded-2xl cursor-pointer transition-all duration-150 select-none ${
                       isCurrent
                         ? 'bg-white/10 text-white'
@@ -964,14 +753,9 @@ export const LibraryPage: React.FC = () => {
                           toggleSaveTrack(track);
                         }}
                         className="p-1 text-zinc-400 hover:text-white transition-colors"
+                        title="Remove from favorited"
                       >
-                        {activeTab === 'saved' ? (
-                          <Trash2 className="w-4 h-4 hover:text-red-400" />
-                        ) : (
-                          <Heart
-                            className={`w-4 h-4 ${isSaved ? 'fill-white text-white' : ''}`}
-                          />
-                        )}
+                        <Trash2 className="w-4 h-4 hover:text-red-400" />
                       </button>
 
                       <span className="w-11 text-right tabular-nums">
@@ -1008,7 +792,7 @@ export const LibraryPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Cover Art Upload Area (Auto 400x400 optimized) */}
+            {/* Cover Art Upload Area */}
             <div className="flex flex-col items-center gap-3">
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -1116,37 +900,9 @@ export const LibraryPage: React.FC = () => {
                   className="w-full h-24 px-4 py-3 bg-zinc-800/80 rounded-2xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-white resize-none font-mono"
                 />
                 {parsedTracks.length > 0 && (
-                  <div className="flex flex-col gap-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[11px] text-emerald-400 font-medium">
-                        ✓ Found {parsedTracks.length} tracks from CSV
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleFixModalTracksWithItunes}
-                        disabled={isFixingModalTracks}
-                        className="px-3 py-1.5 bg-white text-black text-[11px] font-bold rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-                      >
-                        {isFixingModalTracks ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Matching ({itunesModalProgress?.completed || 0}/{itunesModalProgress?.total || parsedTracks.length})...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-3 h-3 text-black" />
-                            <span>Auto-Fix with iTunes API</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {itunesModalMsg && (
-                      <p className="text-[11px] text-zinc-300 bg-zinc-800/80 p-2.5 rounded-xl border border-zinc-700/50">
-                        {itunesModalMsg}
-                      </p>
-                    )}
-                  </div>
+                  <p className="text-[11px] text-zinc-300 font-medium">
+                    ✓ Found {parsedTracks.length} tracks from CSV
+                  </p>
                 )}
               </div>
             )}
@@ -1185,7 +941,7 @@ export const LibraryPage: React.FC = () => {
         </div>
       )}
 
-      {/* EDIT PLAYLIST MODAL */}
+      {/* EDIT PLAYLIST MODAL with Delete Option */}
       {isEditingPlaylist && currentActivePlaylist && (
         <div
           className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -1241,7 +997,7 @@ export const LibraryPage: React.FC = () => {
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) handleImageUpload(file, true);
+                  if (file) handleImageUpload(file);
                 }}
               />
 
@@ -1270,21 +1026,37 @@ export const LibraryPage: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            {/* Footer with Delete on left and Save on right */}
+            <div className="flex items-center justify-between gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsEditingPlaylist(false)}
-                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                onClick={() => {
+                  deletePlaylist(currentActivePlaylist.id);
+                  setIsEditingPlaylist(false);
+                  setSelectedPlaylist(null);
+                }}
+                className="px-4 py-2.5 bg-red-950/60 hover:bg-red-900/80 text-red-300 rounded-2xl text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
               >
-                Cancel
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Playlist</span>
               </button>
-              <button
-                type="submit"
-                disabled={!playlistTitleInput.trim() || isOptimizingImage}
-                className="px-6 py-2.5 bg-white text-black text-xs font-bold rounded-2xl hover:bg-zinc-200 transition-colors disabled:opacity-50"
-              >
-                Save Changes
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPlaylist(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!playlistTitleInput.trim() || isOptimizingImage}
+                  className="px-6 py-2.5 bg-white text-black text-xs font-bold rounded-2xl hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                >
+                  Save Changes
+                </button>
+              </div>
             </div>
           </form>
         </div>

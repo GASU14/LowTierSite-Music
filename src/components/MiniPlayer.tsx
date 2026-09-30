@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAudio } from '../context/AudioContext';
+import { useTheme } from '../context/ThemeContext';
 import {
   Play,
   Pause,
@@ -13,8 +14,10 @@ import {
   Heart,
   Radio,
   ListPlus,
+  ListMusic,
 } from 'lucide-react';
 import { AddToPlaylistModal } from './AddToPlaylistModal';
+import { QueuePanel } from './QueuePanel';
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -51,8 +54,11 @@ export const MiniPlayer: React.FC = () => {
     switchTrackSource,
   } = useAudio();
 
+  const { themeConfig } = useTheme();
+
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
 
   if (!currentTrack || isExpandedPlayer) {
     return null;
@@ -151,7 +157,14 @@ export const MiniPlayer: React.FC = () => {
                             : 'text-zinc-300 hover:bg-zinc-800 hover:text-white'
                         }`}
                       >
-                        <span className="truncate">{src.title}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate flex-1">{src.title}</span>
+                          {src.durationSec && src.durationSec > 0 && (
+                            <span className={`text-[10px] shrink-0 ${currentSourceId === src.id ? 'text-zinc-800 font-bold' : 'text-zinc-400'}`}>
+                              {formatTime(src.durationSec)}
+                            </span>
+                          )}
+                        </div>
                         <span className={`text-[10px] ${currentSourceId === src.id ? 'text-zinc-700' : 'text-zinc-500'}`}>
                           {src.owner}
                         </span>
@@ -199,11 +212,12 @@ export const MiniPlayer: React.FC = () => {
                 id="mini-play-toggle-btn"
                 onClick={togglePlay}
                 disabled={isGrabbing}
-                className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-zinc-200 transition-transform active:scale-95 shadow-md disabled:opacity-50"
+                className={`w-10 h-10 rounded-full flex items-center justify-center hover:opacity-90 transition-transform active:scale-95 shadow-md disabled:opacity-50 ${themeConfig.bgAccent} ${themeConfig.buttonText}`}
+                style={{ backgroundColor: themeConfig.primaryHex }}
                 title={isPlaying ? 'Pause' : 'Play'}
               >
                 {isGrabbing ? (
-                  <Radio className="w-4 h-4 animate-pulse text-zinc-800" />
+                  <Radio className="w-4 h-4 animate-pulse" />
                 ) : isPlaying ? (
                   <Pause className="w-4 h-4 fill-current" />
                 ) : (
@@ -243,8 +257,8 @@ export const MiniPlayer: React.FC = () => {
               <div className="relative flex-1 flex items-center group py-2">
                 <div className="w-full h-1 group-hover:h-1.5 bg-zinc-800 rounded-full overflow-hidden relative transition-all">
                   <div
-                    className="h-full bg-zinc-400 group-hover:bg-white rounded-full transition-colors"
-                    style={{ width: `${progressPercent}%` }}
+                    className="h-full rounded-full transition-all theme-bg-accent"
+                    style={{ width: `${progressPercent}%`, backgroundColor: themeConfig.primaryHex }}
                   />
                 </div>
                 <div
@@ -265,8 +279,20 @@ export const MiniPlayer: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Volume & Expand */}
-          <div className="flex items-center justify-end gap-3.5 w-1/4">
+          {/* Right: Queue button, Volume & Expand */}
+          <div className="flex items-center justify-end gap-3 w-1/4">
+            {/* Queue button next to volume on the left of it */}
+            <button
+              id="mini-queue-btn"
+              onClick={() => setShowQueue(!showQueue)}
+              className={`p-1.5 transition-colors rounded-xl ${
+                showQueue ? 'text-white bg-zinc-800' : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Queue"
+            >
+              <ListMusic className="w-4 h-4" />
+            </button>
+
             <div className="flex items-center gap-2 group">
               <button
                 id="mini-volume-toggle-btn"
@@ -300,6 +326,11 @@ export const MiniPlayer: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating Queue Popup */}
+      {showQueue && (
+        <QueuePanel isFloating onClose={() => setShowQueue(false)} />
+      )}
 
       <AddToPlaylistModal
         track={currentTrack}

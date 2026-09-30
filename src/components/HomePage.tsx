@@ -17,6 +17,8 @@ import {
   getNewReleases,
   filterOutLibraryTracks,
   filterOutLibraryAlbums,
+  normalizeFuzzy,
+  KNOWN_ARTIST_IMAGES,
 } from '../services/api';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
@@ -210,21 +212,33 @@ export const HomePage: React.FC = () => {
         );
         setRecommendedAlbums(filterOutLibraryAlbums(combinedAlbums, allLibraryTracks));
 
-        // 6. Generate recommended artists with Deezer images
+        // 6. Generate recommended artists with authentic curated and Deezer images
         const topArtistPool = [
           'Kanye West', 'Frank Ocean', 'Tyler, The Creator', 'Lana Del Rey',
           'Playboi Carti', 'Brent Faiyaz', 'Steve Lacy', '21 Savage',
           'Don Toliver', 'Childish Gambino', 'Tame Impala', 'Metro Boomin',
-          'Morgan Wallen', 'Zach Bryan', 'Luke Combs',
+          'Morgan Wallen', 'Zach Bryan', 'Luke Combs', 'Billie Eilish',
+          'Post Malone', 'Bad Bunny', 'Dua Lipa', 'Sabrina Carpenter',
+          'Olivia Rodrigo', 'Ariana Grande', 'Drake', 'Travis Scott', 'Kendrick Lamar'
         ];
         const selectedSet = new Set((userArtists || []).map((n) => (n ? n.toLowerCase() : '')));
-        const candidates = topArtistPool.filter((n) => n && !selectedSet.has(n.toLowerCase())).slice(0, 6);
+        const candidates = topArtistPool.filter((n) => n && !selectedSet.has(n.toLowerCase())).slice(0, 8);
 
         const artistRecs = await Promise.all(
           candidates.map(async (name) => {
+            const norm = normalizeFuzzy(name);
+            const knownPic = KNOWN_ARTIST_IMAGES[norm];
+            if (knownPic) {
+              return {
+                id: `rec-art-${norm}`,
+                name,
+                genre: 'Artist',
+                image: knownPic,
+              };
+            }
             try {
               const res = await searchDeezerArtists(name, 1);
-              if (res && res.length > 0) {
+              if (res && res.length > 0 && res[0].image) {
                 return {
                   id: `rec-art-${res[0].id}`,
                   name: res[0].name || name,
@@ -234,10 +248,10 @@ export const HomePage: React.FC = () => {
               }
             } catch {}
             return {
-              id: `rec-art-${name.replace(/\s+/g, '-')}`,
+              id: `rec-art-${norm}`,
               name,
               genre: 'Artist',
-              image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
+              image: 'https://cdn-images.dzcdn.net/images/artist/bb76c2ee3b068726ab4c37b0aabdb57a/500x500-000000-80-0-0.jpg',
             };
           })
         );
@@ -259,8 +273,7 @@ export const HomePage: React.FC = () => {
     };
   }, [userArtists, allLibraryTracks, userGenres]);
 
-  // Handle live search with Library-first prioritization
-  // (e.g., if user follows Kanye and searches "my beatiful", Kanye's album shows first, then other taste matches, then randoms)
+  // Handle live search with Fuzzy matching & closest results (e.g., "jayz" -> "JAY-Z", "sza" -> "SZA")
   useEffect(() => {
     if (!searchTerm.trim()) {
       setSearchResults({ songs: [], albums: [], artists: [] });
@@ -272,13 +285,16 @@ export const HomePage: React.FC = () => {
       setIsSearching(true);
       try {
         const query = searchTerm.trim();
+        const normQuery = normalizeFuzzy(query);
+
+        // In parallel: search tracks, albums, and artists
         const [songs, albums, deezerArts] = await Promise.all([
-          searchItunes(query, 30),
-          searchAlbums(query, 25),
-          searchDeezerArtists(query, 8).catch(() => []),
+          searchItunes(query, 35),
+          searchAlbums(query, 30),
+          searchDeezerArtists(query, 12).catch(() => []),
         ]);
 
-        // Targeted search for user's followed artists to guarantee hits (e.g. Kanye -> My Beautiful Dark Twisted Fantasy)
+        // Targeted search for user's followed artists to guarantee hits
         let extraAlbums: AlbumResult[] = [];
         let extraSongs: Track[] = [];
         if (selectedArtists && selectedArtists.length > 0 && query.length >= 3) {
@@ -310,64 +326,122 @@ export const HomePage: React.FC = () => {
           (track, idx, self) => track && idx === self.findIndex((t) => t.id === track.id)
         );
 
-        // Priority Scoring Algorithm:
-        // 1. Followed artist match + query title match => Highest score (1000+)
-        // 2. Followed artist general match => High score (800)
-        // 3. Library artist match => Medium-high score (500)
-        // 4. Exact title match => Medium score (300)
-        // 5. Random/external => Lower score
-        const followedSet = new Set((selectedArtists || []).map((a) => a.toLowerCase().trim()).filter(Boolean));
-        const libraryArtistsSet = new Set(userArtists.map((a) => a.toLowerCase().trim()).filter(Boolean));
+        // Comprehensive Artist Extraction:
+        // Merge artists from Deezer artist search + iTunes songs + iTunes albums so an artist ALWAYS appears!
+        const artistMap = new Map<string, ArtistRecommendation>();
 
-        const getPriorityScore = (itemArtist: string, itemTitle?: string) => {
-          const normArt = (itemArtist || '').toLowerCase().trim();
-          const normTitle = (itemTitle || '').toLowerCase().trim();
-          const normQuery = query.toLowerCase().trim();
+        // 1. Artists from Deezer/iTunes artist search
+        for (const da of deezerArts) {
+          if (!da || !da.name) continue;
+          const cleanName = da.name.replace(/JAŸ-Z/gi, 'JAY-Z');
+          const normA = normalizeFuzzy(cleanName);
+          const img = da.image || KNOWN_ARTIST_IMAGES[normA] || '';
+          artistMap.set(normA, {
+            id: `search-artist-${da.id}`,
+            name: cleanName,
+            genre: 'Artist',
+            image: img,
+          });
+        }
 
-          const isFollowed =
-            followedSet.has(normArt) ||
-            Array.from(followedSet).some((f) => normArt.includes(f) || f.includes(normArt));
-          if (isFollowed) {
-            if (normTitle.includes(normQuery) || normQuery.includes(normTitle)) return 1000;
+        // 2. Artists from matching songs
+        for (const s of mergedSongs) {
+          if (!s || !s.artist) continue;
+          const cleanName = s.artist.replace(/JAŸ-Z/gi, 'JAY-Z');
+          const normA = normalizeFuzzy(cleanName);
+          if (!artistMap.has(normA)) {
+            const img = KNOWN_ARTIST_IMAGES[normA] || s.artworkLarge || s.artworkSmall || '';
+            artistMap.set(normA, {
+              id: `search-artist-song-${normA}`,
+              name: cleanName,
+              genre: 'Artist',
+              image: img,
+            });
+          }
+        }
+
+        // 3. Artists from matching albums
+        for (const a of mergedAlbums) {
+          if (!a || !a.artist) continue;
+          const cleanName = a.artist.replace(/JAŸ-Z/gi, 'JAY-Z');
+          const normA = normalizeFuzzy(cleanName);
+          if (!artistMap.has(normA)) {
+            const img = KNOWN_ARTIST_IMAGES[normA] || a.artwork || '';
+            artistMap.set(normA, {
+              id: `search-artist-alb-${normA}`,
+              name: cleanName,
+              genre: 'Artist',
+              image: img,
+            });
+          }
+        }
+
+        // 4. Check known artists map directly for fuzzy query match (e.g. "jayz" -> JAY-Z)
+        for (const [kKey, kImg] of Object.entries(KNOWN_ARTIST_IMAGES)) {
+          if (kKey === normQuery || kKey.includes(normQuery) || normQuery.includes(kKey)) {
+            if (!artistMap.has(kKey)) {
+              const displayName = kKey === 'jayz' ? 'JAY-Z' : (kKey === 'sza' ? 'SZA' : kKey.toUpperCase());
+              artistMap.set(kKey, {
+                id: `search-artist-known-${kKey}`,
+                name: displayName,
+                genre: 'Artist',
+                image: kImg,
+              });
+            }
+          }
+        }
+
+        // Fuzzy Priority Scoring Algorithm:
+        // Ensures "jayz" ranks "JAY-Z" and his albums/songs at the very top!
+        const followedSet = new Set((selectedArtists || []).map((a) => normalizeFuzzy(a)).filter(Boolean));
+        const libraryArtistsSet = new Set(userArtists.map((a) => normalizeFuzzy(a)).filter(Boolean));
+
+        const getFuzzyScore = (itemArtist: string, itemTitle?: string) => {
+          const normArt = normalizeFuzzy(itemArtist || '');
+          const normTitle = normalizeFuzzy(itemTitle || '');
+
+          // Exact fuzzy match (e.g. "jayz" matches "JAY-Z" exactly after normalization)
+          if (normArt === normQuery || normTitle === normQuery) {
+            return 2000;
+          }
+
+          // Artist starts with query or query starts with artist
+          if (normArt.startsWith(normQuery) || normQuery.startsWith(normArt)) {
+            return 1500;
+          }
+
+          // Title starts with query
+          if (normTitle.startsWith(normQuery)) {
+            return 1200;
+          }
+
+          // Artist contains query or query contains artist
+          if (normArt.includes(normQuery) || normQuery.includes(normArt)) {
+            return 1000;
+          }
+
+          // Title contains query
+          if (normTitle.includes(normQuery) || normQuery.includes(normTitle)) {
             return 800;
           }
 
-          const isLib =
-            libraryArtistsSet.has(normArt) ||
-            Array.from(libraryArtistsSet).some((l) => normArt.includes(l) || l.includes(normArt));
-          if (isLib) {
-            if (normTitle.includes(normQuery)) return 600;
-            return 500;
-          }
+          // Followed artist affinity
+          if (followedSet.has(normArt)) return 600;
+          if (libraryArtistsSet.has(normArt)) return 400;
 
-          if (normTitle === normQuery) return 300;
-          if (normTitle.startsWith(normQuery) || normTitle.includes(normQuery)) return 200;
-          return 50;
+          return 100;
         };
 
         const sortedAlbums = [...mergedAlbums].sort((a, b) => {
-          const scoreA = getPriorityScore(a.artist, a.title);
-          const scoreB = getPriorityScore(b.artist, b.title);
-          return scoreB - scoreA;
+          return getFuzzyScore(b.artist, b.title) - getFuzzyScore(a.artist, a.title);
         });
 
         const sortedSongs = [...mergedSongs].sort((a, b) => {
-          const scoreA = getPriorityScore(a.artist, a.title);
-          const scoreB = getPriorityScore(b.artist, b.title);
-          return scoreB - scoreA;
+          return getFuzzyScore(b.artist, b.title) - getFuzzyScore(a.artist, a.title);
         });
 
-        const mappedArtists: ArtistRecommendation[] = deezerArts.map((d) => ({
-          id: `search-artist-${d.id}`,
-          name: d.name,
-          genre: 'Artist',
-          image: d.image,
-        }));
-
-        const sortedArtists = [...mappedArtists].sort((a, b) => {
-          const scoreA = getPriorityScore(a.name);
-          const scoreB = getPriorityScore(b.name);
-          return scoreB - scoreA;
+        const sortedArtists = Array.from(artistMap.values()).sort((a, b) => {
+          return getFuzzyScore(b.name) - getFuzzyScore(a.name);
         });
 
         setSearchResults({
@@ -380,7 +454,7 @@ export const HomePage: React.FC = () => {
       } finally {
         setIsSearching(false);
       }
-    }, 300);
+    }, 250);
 
     return () => clearTimeout(timer);
   }, [searchTerm, selectedArtists, userArtists]);
@@ -647,7 +721,7 @@ export const HomePage: React.FC = () => {
                     <MixDisk
                       title={mix.title}
                       mixNumber={mix.id.replace(/[^\d]/g, '') || '1'}
-                      gradient={mix.gradient || 'emerald'}
+                      gradient={mix.gradient || 'indigo'}
                       size="md"
                     />
                   </div>
@@ -671,9 +745,9 @@ export const HomePage: React.FC = () => {
               </div>
 
               <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar scroll-smooth">
-                {recapAlbums.map((alb) => (
+                {recapAlbums.map((alb, idx) => (
                   <div
-                    key={`recap-${alb.id}`}
+                    key={`recap-${alb.id}-${idx}`}
                     id={`recap-card-${alb.id}`}
                     onClick={() =>
                       openAlbum(alb.id, {
@@ -1003,6 +1077,9 @@ export const HomePage: React.FC = () => {
                         src={artist.image}
                         alt={artist.name}
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://cdn-images.dzcdn.net/images/artist/bb76c2ee3b068726ab4c37b0aabdb57a/500x500-000000-80-0-0.jpg';
+                        }}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>

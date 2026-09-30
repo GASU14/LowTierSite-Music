@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Pause, Clock, Loader2, ArrowLeft, Heart, Disc3, UserPlus, UserCheck } from 'lucide-react';
+import { Play, Pause, Clock, Loader2, ArrowLeft, Heart, Disc3, UserPlus, UserCheck, Shuffle } from 'lucide-react';
 import { useNavigation } from '../context/NavigationContext';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
-import { getArtistDetails } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
+import { getArtistDetails, createAlbumFallbackDataUrl } from '../services/api';
 import { ArtistDetail, Track, AlbumDetail } from '../types';
 
-type DiscographyFilter = 'all' | 'albums' | 'singles' | 'features';
+type DiscographyFilter = 'all' | 'albums' | 'singles';
 
 export const ArtistView: React.FC = () => {
   const { selectedArtistName, selectedArtistId, openAlbum, goBack, canGoBack } = useNavigation();
   const { playTrack, currentTrack, isPlaying, togglePlay, toggleFavorite, isFavorite, getTrackDuration, duration } = useAudio();
   const { toggleFollowArtist, isFollowingArtist } = useAuth();
+  const { themeConfig } = useTheme();
 
   const [artistData, setArtistData] = useState<ArtistDetail | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -27,7 +29,7 @@ export const ArtistView: React.FC = () => {
 
     getArtistDetails(selectedArtistId || selectedArtistName || '')
       .then((data) => {
-        if (isMounted && data) {
+        if (isMounted) {
           setArtistData(data);
           setIsLoading(false);
         }
@@ -74,12 +76,14 @@ export const ArtistView: React.FC = () => {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  const displayName = selectedArtistName || artistData.name;
   const popularTracks = artistData.popularTracks || artistData.topTracks || [];
   const discography = artistData.discography || artistData.allReleases || artistData.albums || [];
-  const artistAvatar = artistData.picture || artistData.image || artistData.headerImage || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=500&q=80';
+  const albumCoverFallback = popularTracks[0]?.artworkOriginal || popularTracks[0]?.artworkLarge || discography[0]?.artworkLarge || discography[0]?.artwork || createAlbumFallbackDataUrl(displayName);
+  const artistAvatar = artistData.picture || artistData.image || artistData.headerImage || albumCoverFallback;
 
   const isCurrentArtistPlaying =
-    currentTrack?.artist?.toLowerCase() === artistData.name.toLowerCase() && isPlaying;
+    currentTrack?.artist?.toLowerCase() === displayName.toLowerCase() && isPlaying;
 
   const handlePlayArtist = () => {
     if (isCurrentArtistPlaying) {
@@ -93,12 +97,19 @@ export const ArtistView: React.FC = () => {
     playTrack(track, popularTracks);
   };
 
-  // Filter discography safely
-  const filteredAlbums = discography.filter((item) => {
+  // Discography sorted by release date: latest at top, oldest at bottom (features removed)
+  const sortedDiscography = [...discography]
+    .filter((item) => item.recordType !== 'feature')
+    .sort((a, b) => {
+      const timeA = a.releaseDate ? new Date(a.releaseDate).getTime() : 0;
+      const timeB = b.releaseDate ? new Date(b.releaseDate).getTime() : 0;
+      return timeB - timeA;
+    });
+
+  const filteredAlbums = sortedDiscography.filter((item) => {
     if (filter === 'all') return true;
     if (filter === 'albums') return item.recordType === 'album' || !item.recordType;
     if (filter === 'singles') return item.recordType === 'single' || item.recordType === 'ep';
-    if (filter === 'features') return item.recordType === 'feature' || item.recordType === 'compile';
     return true;
   });
 
@@ -123,14 +134,14 @@ export const ArtistView: React.FC = () => {
 
       {/* Spotify-style Artist Hero Header */}
       <div className="relative rounded-3xl overflow-hidden mb-8 bg-gradient-to-b from-zinc-700/50 via-[#141417] to-[#101012] shadow-2xl p-6 md:p-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8">
-        {/* Artist Circular Avatar / Picture from Deezer (No border ring) */}
-        <div className="w-40 h-40 md:w-52 md:h-52 rounded-full overflow-hidden shadow-2xl bg-zinc-800 shrink-0">
+        {/* Profile Image */}
+        <div className="relative w-40 h-40 md:w-52 md:h-52 rounded-full overflow-hidden shadow-2xl bg-zinc-800 shrink-0 select-none">
           <img
             src={artistAvatar}
-            alt={artistData.name}
+            alt={displayName}
             referrerPolicy="no-referrer"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=500&q=80';
+              (e.target as HTMLImageElement).src = albumCoverFallback;
             }}
             className="w-full h-full object-cover"
           />
@@ -145,34 +156,53 @@ export const ArtistView: React.FC = () => {
           </div>
 
           <h1 className="text-3xl md:text-5xl lg:text-6xl font-black text-white tracking-tight leading-tight line-clamp-2 mb-4">
-            {artistData.name}
+            {displayName}
           </h1>
 
-          <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-            {/* Main Action Play Button */}
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+            {/* 1:1 Square Play Button */}
             <button
+              id="artist-play-btn"
               onClick={handlePlayArtist}
-              className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl hover:opacity-90 active:scale-95 transition-all cursor-pointer shrink-0 ${themeConfig.bgAccent} ${themeConfig.buttonText}`}
+              style={{ backgroundColor: themeConfig.primaryHex }}
+              title={isCurrentArtistPlaying ? 'Pause' : 'Play'}
             >
               {isCurrentArtistPlaying ? (
-                <Pause className="w-5 h-5 fill-black" />
+                <Pause className="w-5 h-5 fill-current" />
               ) : (
-                <Play className="w-5 h-5 fill-black translate-x-0.5" />
+                <Play className="w-5 h-5 fill-current translate-x-0.5" />
               )}
             </button>
 
-            {/* Follow / Following Button right next to Play */}
+            {/* 1:1 Square Shuffle Button */}
             <button
-              onClick={() => toggleFollowArtist(artistData.name)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-all shadow-lg cursor-pointer active:scale-95 ${
-                isFollowingArtist(artistData.name)
+              id="artist-shuffle-btn"
+              onClick={() => {
+                if (popularTracks.length > 0) {
+                  const shuffled = [...popularTracks].sort(() => Math.random() - 0.5);
+                  playTrack(shuffled[0], shuffled);
+                }
+              }}
+              disabled={popularTracks.length === 0}
+              className="w-12 h-12 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-white flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer shrink-0 disabled:opacity-50"
+              title="Shuffle"
+            >
+              <Shuffle className="w-5 h-5" />
+            </button>
+
+            {/* Follow / Following Button */}
+            <button
+              onClick={() => toggleFollowArtist(displayName)}
+              className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all shadow-lg cursor-pointer active:scale-95 ${
+                isFollowingArtist(displayName)
                   ? 'bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700'
                   : 'bg-white hover:bg-zinc-200 text-black'
               }`}
             >
-              {isFollowingArtist(artistData.name) ? (
+              {isFollowingArtist(displayName) ? (
                 <>
-                  <UserCheck className="w-4 h-4 text-emerald-400" />
+                  <UserCheck className="w-4 h-4 text-white" />
                   <span>Following</span>
                 </>
               ) : (
@@ -184,7 +214,7 @@ export const ArtistView: React.FC = () => {
             </button>
 
             {artistData.monthlyListeners && (
-              <span className="text-xs sm:text-sm text-zinc-300 font-medium">
+              <span className="text-xs sm:text-sm text-zinc-300 font-medium ml-1">
                 {artistData.monthlyListeners.toLocaleString()} monthly listeners
               </span>
             )}
@@ -309,9 +339,9 @@ export const ArtistView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="text-xl font-bold text-white tracking-tight">Discography</h2>
 
-          {/* Discography Filter Pills (All, Albums, Singles, Features) */}
+          {/* Discography Filter Pills (All, Albums, Singles) - Features removed */}
           <div className="flex items-center gap-1.5 p-1 bg-zinc-900/80 rounded-2xl w-fit">
-            {(['all', 'albums', 'singles', 'features'] as DiscographyFilter[]).map((tab) => (
+            {(['all', 'albums', 'singles'] as DiscographyFilter[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
@@ -321,13 +351,13 @@ export const ArtistView: React.FC = () => {
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                {tab}
+                {tab === 'singles' ? 'Singles & EPs' : tab}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Discography Grid - NO card background box/borders as requested */}
+        {/* Discography Grid - In release date order (latest top, oldest bottom) */}
         {filteredAlbums.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {filteredAlbums.map((item) => (

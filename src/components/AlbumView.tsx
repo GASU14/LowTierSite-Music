@@ -3,12 +3,14 @@ import { Clock, Music, Loader2, ArrowLeft, Heart, Play, Shuffle } from 'lucide-r
 import { useNavigation } from '../context/NavigationContext';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { getAlbumDetails } from '../services/api';
 import { AlbumDetail, Track } from '../types';
 
 export const AlbumView: React.FC = () => {
   const { selectedAlbumId, selectedAlbumData, openArtist, goBack, canGoBack } = useNavigation();
   const { playTrack, currentTrack, isPlaying, toggleFavorite, isFavorite, getTrackDuration, duration } = useAudio();
+  const { themeConfig } = useTheme();
   
   const [album, setAlbum] = useState<AlbumDetail | null>(selectedAlbumData);
   const [isLoading, setIsLoading] = useState<boolean>(!selectedAlbumData);
@@ -142,7 +144,7 @@ export const AlbumView: React.FC = () => {
             )}
           </div>
 
-          {/* Play & Shuffle Buttons */}
+          {/* Play & Shuffle Buttons: 1:1 Square with graphic icon only */}
           <div className="flex items-center gap-3">
             <button
               id="album-play-btn"
@@ -152,10 +154,11 @@ export const AlbumView: React.FC = () => {
                 }
               }}
               disabled={!album.tracks || album.tracks.length === 0}
-              className="flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black hover:bg-zinc-200 text-xs font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50"
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-xl hover:opacity-90 active:scale-95 disabled:opacity-50 shrink-0 ${themeConfig.bgAccent} ${themeConfig.buttonText}`}
+              style={{ backgroundColor: themeConfig.primaryHex }}
+              title="Play"
             >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Play</span>
+              <Play className="w-5 h-5 fill-current ml-0.5" />
             </button>
             <button
               id="album-shuffle-btn"
@@ -166,10 +169,10 @@ export const AlbumView: React.FC = () => {
                 }
               }}
               disabled={!album.tracks || album.tracks.length === 0}
-              className="flex items-center gap-2 px-5 py-3 rounded-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50"
+              className="w-12 h-12 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-white flex items-center justify-center transition-all shadow-md active:scale-95 disabled:opacity-50 shrink-0"
+              title="Shuffle"
             >
-              <Shuffle className="w-4 h-4" />
-              <span>Shuffle</span>
+              <Shuffle className="w-5 h-5" />
             </button>
           </div>
         </div>
