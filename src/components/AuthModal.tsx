@@ -65,7 +65,7 @@ export const AuthModal: React.FC = () => {
           </div>
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
             <Sparkles className="w-3.5 h-3.5 text-zinc-300" />
-            <span>Welcome to YTIFY</span>
+            <span>Welcome to Music</span>
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             {authMode === 'signup' ? 'Create Your Account' : 'Welcome Back'}

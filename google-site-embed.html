@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LowTierSite</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #000000;
+      color: #ffffff;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      text-align: center;
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+    }
+
+    /* Single minimalist button: black background, subtle border, no surrounding box */
+    .btn {
+      position: relative;
+      width: 200px;
+      height: 48px;
+      background: #000000;
+      border: 1px solid #333333;
+      border-radius: 8px;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.2s, transform 0.1s;
+      outline: none;
+    }
+
+    .btn:hover {
+      border-color: #71717a;
+    }
+
+    .btn:active {
+      transform: scale(0.99);
+    }
+
+    /* Dark grey transparent progress fill */
+    .btn-progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 0%;
+      background: rgba(128, 128, 128, 0.45);
+      transition: width 0.12s ease-out;
+      pointer-events: none;
+    }
+
+    .btn-text {
+      position: relative;
+      z-index: 2;
+      pointer-events: none;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+    <div class="title">LowTierSite</div>
+
+    <button id="action-btn" class="btn" onclick="handleClick()">
+      <div id="progress-fill" class="btn-progress-fill"></div>
+      <span id="btn-text" class="btn-text">Download Music</span>
+    </button>
+  </div>
+
+  <script>
+    // Primary and fallback endpoints with full CORS headers
+    const DOWNLOAD_URLS = [
+      'https://ais-dev-unvrje3m3scrnf53zybosw-217996053179.us-east1.run.app/standalone.html',
+      'https://ais-pre-unvrje3m3scrnf53zybosw-217996053179.us-east1.run.app/standalone.html',
+      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/standalone.html',
+      'https://cdn.jsdelivr.net/gh/GASU14/LowTierSite-Music@main/standalone.html',
+      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/master/standalone.html'
+    ];
+
+    const CACHE_KEY = 'lts_music_standalone_html';
+
+    const actionBtn = document.getElementById('action-btn');
+    const progressFill = document.getElementById('progress-fill');
+    const btnText = document.getElementById('btn-text');
+
+    let isDownloaded = false;
+    let isDownloading = false;
+
+    // Check if Music is already cached on load
+    window.addEventListener('DOMContentLoaded', () => {
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached && cached.length > 50000) {
+          setReadyState();
+        }
+      } catch (e) {}
+    });
+
+    function setReadyState() {
+      isDownloaded = true;
+      isDownloading = false;
+      progressFill.style.width = '0%';
+      btnText.textContent = 'Open';
+      actionBtn.style.borderColor = '#ffffff';
+    }
+
+    function handleClick() {
+      if (isDownloaded) {
+        openInAboutBlank();
+      } else {
+        startDownload();
+      }
+    }
+
+    async function startDownload() {
+      if (isDownloading) return;
+      isDownloading = true;
+
+      btnText.textContent = 'Downloading 0%';
+      progressFill.style.width = '0%';
+
+      let response = null;
+      for (const url of DOWNLOAD_URLS) {
+        try {
+          const res = await fetch(url, { mode: 'cors' });
+          if (res.ok) {
+            response = res;
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (!response) {
+        btnText.textContent = 'Retry Download';
+        progressFill.style.width = '0%';
+        isDownloading = false;
+        return;
+      }
+
+      try {
+        const contentLength = response.headers.get('content-length');
+        const total = contentLength ? parseInt(contentLength, 10) : 1176000;
+        let loaded = 0;
+
+        const reader = response.body.getReader();
+        const chunks = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          loaded += value.length;
+
+          const pct = Math.min(Math.round((loaded / total) * 100), 99);
+          progressFill.style.width = pct + '%';
+          btnText.textContent = 'Downloading ' + pct + '%';
+        }
+
+        progressFill.style.width = '100%';
+        btnText.textContent = 'Downloading 100%';
+
+        const blob = new Blob(chunks, { type: 'text/html;charset=utf-8' });
+        const htmlText = await blob.text();
+
+        if (!htmlText || htmlText.length < 50000) {
+          throw new Error('Incomplete download');
+        }
+
+        // Cache permanently in localStorage
+        try {
+          localStorage.setItem(CACHE_KEY, htmlText);
+        } catch (storageErr) {
+          console.warn('Storage warning:', storageErr);
+        }
+
+        setTimeout(() => {
+          setReadyState();
+        }, 300);
+
+      } catch (err) {
+        console.error('Download error:', err);
+        btnText.textContent = 'Retry Download';
+        progressFill.style.width = '0%';
+        isDownloading = false;
+      }
+    }
+
+    function openInAboutBlank() {
+      let cachedHtml = '';
+      try {
+        cachedHtml = localStorage.getItem(CACHE_KEY) || '';
+      } catch (e) {}
+
+      if (!cachedHtml) {
+        isDownloaded = false;
+        startDownload();
+        return;
+      }
+
+      // Method 1: Standard window.open('about:blank') with document.write
+      try {
+        const win = window.open('about:blank', '_blank');
+        if (win && !win.closed) {
+          win.document.open();
+          win.document.write(cachedHtml);
+          win.document.close();
+          return;
+        }
+      } catch (e) {
+        console.warn('Direct about:blank write failed:', e);
+      }
+
+      // Method 2: Blob URL popup (works cleanly in sandboxed environments)
+      try {
+        const blob = new Blob([cachedHtml], { type: 'text/html;charset=utf-8' });
+        const blobUrl = URL.createObjectURL(blob);
+        const win2 = window.open(blobUrl, '_blank');
+        if (!win2) {
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            a.remove();
+            URL.revokeObjectURL(blobUrl);
+          }, 3000);
+        }
+      } catch (err) {
+        console.error('Failed to open tab:', err);
+        btnText.textContent = 'Allow popups & retry';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -49,7 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div id="brand-header" className="flex items-center justify-between px-2 py-1">
           {!isCollapsed && (
             <span className="text-xl font-black tracking-tight text-white select-none">
-              YTIFY
+              Music
             </span>
           )}
 

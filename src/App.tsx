@@ -37,7 +37,7 @@ function AppContent() {
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Top Mobile Bar (No border) */}
         <header className="md:hidden flex items-center justify-between px-5 py-4 bg-[#0e0e11] shrink-0 shadow-md">
-          <span className="font-extrabold text-white text-lg tracking-tight">YTIFY</span>
+          <span className="font-extrabold text-white text-lg tracking-tight">Music</span>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => setView('home')}

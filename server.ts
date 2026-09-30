@@ -8,6 +8,17 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Global CORS enabling for Google Sites and external embeds
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // API 1: Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
@@ -749,6 +760,15 @@ async function startServer() {
       console.error("New releases error:", err);
       return res.json({ albums: [] });
     }
+  });
+
+  // Standalone HTML bundle route with explicit CORS headers
+  app.get("/standalone.html", (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.setHeader("Content-Type", "text/html; charset=UTF-8");
+    res.sendFile(path.join(process.cwd(), "standalone.html"));
   });
 
   // Vite middleware for development
