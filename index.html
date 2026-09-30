@@ -13,8 +13,14 @@
   <body class="bg-[#09090b] text-[#f4f4f5] antialiased">
     <div id="root"></div>
     <div id="yt-audio-player-host" style="position: fixed; bottom: 0; right: 0; width: 200px; height: 200px; opacity: 0.001; pointer-events: none; z-index: -9999;"></div>
+    <script>
+      // When opened locally or statically via file:// or without dev server, redirect to pre-built standalone.html
+      if (window.location.protocol === 'file:') {
+        window.location.replace('./standalone.html');
+      }
+    </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx" onerror="window.location.replace('./standalone.html')"></script>
   </body>
 </html>
 
