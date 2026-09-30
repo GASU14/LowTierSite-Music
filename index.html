@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YTIFY</title>
+    <meta name="description" content="Minimalist YouTube & iTunes music streaming player with synchronized lyrics, music video playback, and personalized Firebase recommendations." />
+    <meta property="og:title" content="YTIFY" />
+    <meta property="og:description" content="Minimalist YouTube & iTunes music streaming player with synchronized lyrics, music video playback, and personalized Firebase recommendations." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body class="bg-[#09090b] text-[#f4f4f5] antialiased">
+    <div id="root"></div>
+    <div id="yt-audio-player-host" style="position: fixed; bottom: 0; right: 0; width: 200px; height: 200px; opacity: 0.001; pointer-events: none; z-index: -9999;"></div>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,6 @@
+{
+  "name": "YTIFY",
+  "description": "Minimalist YouTube & iTunes music streaming player with synchronized lyrics, music video playback, and personalized Firebase recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
