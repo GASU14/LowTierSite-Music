@@ -42,7 +42,7 @@
       color: #ffffff;
     }
 
-    /* Single minimalist button: black background, subtle border, no surrounding box */
+    /* Single minimalist button */
     .btn {
       position: relative;
       width: 200px;
@@ -103,13 +103,12 @@
   </div>
 
   <script>
-    // Primary and fallback endpoints with full CORS headers
+    // Public CDN & GitHub raw endpoints with verified CORS access-control-allow-origin: *
     const DOWNLOAD_URLS = [
-      'https://ais-dev-unvrje3m3scrnf53zybosw-217996053179.us-east1.run.app/standalone.html',
-      'https://ais-pre-unvrje3m3scrnf53zybosw-217996053179.us-east1.run.app/standalone.html',
-      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/standalone.html',
+      'https://cdn.jsdelivr.net/gh/GASU14/LowTierSite-Music@main/public/standalone.html',
+      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/public/standalone.html',
       'https://cdn.jsdelivr.net/gh/GASU14/LowTierSite-Music@main/standalone.html',
-      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/master/standalone.html'
+      'https://raw.githubusercontent.com/GASU14/LowTierSite-Music/main/standalone.html'
     ];
 
     const CACHE_KEY = 'lts_music_standalone_html';
@@ -157,7 +156,7 @@
       let response = null;
       for (const url of DOWNLOAD_URLS) {
         try {
-          const res = await fetch(url, { mode: 'cors' });
+          const res = await fetch(url);
           if (res.ok) {
             response = res;
             break;
@@ -246,7 +245,7 @@
         console.warn('Direct about:blank write failed:', e);
       }
 
-      // Method 2: Blob URL popup (works cleanly in sandboxed environments)
+      // Method 2: Blob URL popup fallback
       try {
         const blob = new Blob([cachedHtml], { type: 'text/html;charset=utf-8' });
         const blobUrl = URL.createObjectURL(blob);
